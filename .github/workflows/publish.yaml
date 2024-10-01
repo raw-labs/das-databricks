@@ -1,5 +1,6 @@
 name: publish
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*.*.*"
@@ -8,7 +9,7 @@ env:
   GITHUB_TOKEN: ${{ secrets.WRITE_PACKAGES }}
 
 jobs:
-  publish:
+  publish-jars:
     runs-on: self-hosted
     container:
       image: sbtscala/scala-sbt:eclipse-temurin-jammy-21.0.2_13_1.9.9_2.12.19
@@ -19,3 +20,17 @@ jobs:
         fetch-depth: 0
     - name: sbt publish
       run: sbt clean publish
+  publish-docker-image:
+    runs-on: self-hosted
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.WRITE_PACKAGES }}
+        logout: false
+    - name: publish docker images
+      run: .github/scripts/dnd-sbt docker/Docker/publish
