@@ -48,8 +48,7 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
       rowCount -= 1
       val row = Row.newBuilder()
       columns.zip(items.asScala).foreach {
-        case (columnInfo, item) =>
-          row.putData(columnInfo.getName, databricksToRawValue(columnInfo, item))
+        case (columnInfo, item) => row.putData(columnInfo.getName, databricksToRawValue(columnInfo, item))
       }
       row.build()
     } else {
