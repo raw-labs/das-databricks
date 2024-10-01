@@ -1,0 +1,16 @@
+name: Docker CI
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker-ci.yaml
+      - build.sbt
+
+env:
+  GITHUB_TOKEN: ${{ secrets.READ_PACKAGES }}
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/scripts/dnd-sbt docker/Docker/publishLocal
