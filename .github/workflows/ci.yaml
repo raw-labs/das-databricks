@@ -25,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sbt headerCheckAll
+      - run: sbt scalafmtCheckAll
   test:
     runs-on: self-hosted
     container:
