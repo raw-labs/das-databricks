@@ -16,4 +16,12 @@ addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.12.0")
 
 addSbtPlugin("com.github.sbt" % "sbt-protobuf" % "0.8.0")
 
-addSbtPlugin("com.github.sbt" % "sbt-dynver" % "5.0.1")
+credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  "raw-labs",
+  sys.env.getOrElse("GITHUB_TOKEN", "")
+)
+resolvers += "GitHub Packages" at "https://maven.pkg.github.com/raw-labs/sbt-versioner"
+
+addSbtPlugin("com.raw-labs" % "sbt-versioner" % "0.1.0")
