@@ -97,9 +97,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     new DASDatabricksExecuteResult(executeAPI, response)
   }
 
-  // TODO wrap in double quotes?
   private def databricksColumnName(name: String): String = {
-//    '"' + name.replace("\"", "\"\"") + '"'
     '`' + name + '`'
   }
 
@@ -198,6 +196,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   }
 
   private def rawValueToDatabricksQueryString(v: Value): String = {
+    logger.debug(s"Converting value to query string: $v")
     if (v.hasByte) v.getByte.getV.toString
     else if (v.hasShort) v.getShort.getV.toString
     else if (v.hasInt) v.getInt.getV.toString
@@ -208,8 +207,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     else if (v.hasString) {
       // This needs to be escaped for SQL queries
       val str = v.getString.getV
-      str.replace("'", "''")
-      '\'' + str + '\''
+      '\'' + str.replace("'", "''") + '\''
     } else if (v.hasBool) v.getBool.getV.toString
     else if (v.hasNull) "NULL"
     else if (v.hasDate) {
@@ -232,6 +230,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   }
 
   private def rawValueToParameter(v: Value): StatementParameterListItem = {
+    logger.debug(s"Converting value to parameter: $v")
     val parameter = new StatementParameterListItem()
     if (v.hasByte) {
       parameter.setValue(v.getByte.getV.toString)

@@ -27,7 +27,7 @@ class DASDatabricks(options: Map[String, String]) extends DASSdk {
   private val token: String = options.getOrElse("token", throw new IllegalArgumentException("Token is required"))
   private val catalog: String = options.getOrElse("catalog", throw new IllegalArgumentException("Catalog is required"))
   private val schema: String = options.getOrElse("schema", throw new IllegalArgumentException("Schema is required"))
-  private val wareshouse: String =
+  private val warehouse: String =
     options.getOrElse("warehouse", throw new IllegalArgumentException("Warehouse ID is required"))
   private val config = new DatabricksConfig().setHost(host).setToken(token)
   private val databricksClient = new WorkspaceClient(config)
@@ -41,7 +41,7 @@ class DASDatabricks(options: Map[String, String]) extends DASSdk {
     val databricksTables = databricksClient.tables().list(req)
     val tables = mutable.Map.empty[String, DASDatabricksTable]
     databricksTables.forEach { databricksTable =>
-      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, wareshouse, databricksTable))
+      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, warehouse, databricksTable))
     }
     tables.toMap
   }
