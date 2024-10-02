@@ -110,10 +110,7 @@ lazy val root = (project in file("."))
     publishSettings,
     libraryDependencies ++= Seq(
       "com.raw-labs" %% "das-sdk-scala" % "0.1.3" % "compile->compile;test->test",
-      "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile",
-      "commons-io" % "commons-io" % "2.13.0"  % "compile->compile"
-//      "joda-time" % "joda-time" % "2.12.7",
-//      "com.fasterxml.jackson.datatype" % "jackson-datatype-joda" % "2.12.7"
+      "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
     )
   )
 

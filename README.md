@@ -1,6 +1,6 @@
 # To publish the server as a docker image
 ```
-sbt docker/docker:publishLocal
+sbt docker/Docker/publishLocal
 ```
 
 # To run locally
