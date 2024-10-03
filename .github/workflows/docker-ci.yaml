@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/docker-ci.yaml
+      - .github/scripts/**
       - build.sbt
 
 env:
