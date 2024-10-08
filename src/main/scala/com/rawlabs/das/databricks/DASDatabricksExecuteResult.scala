@@ -13,6 +13,7 @@
 package com.rawlabs.das.databricks
 
 import com.databricks.sdk.service.sql._
+import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
 import com.google.protobuf.ByteString
 import com.rawlabs.das.sdk.DASExecuteResult
 import com.rawlabs.protocol.das.Row
@@ -41,6 +42,8 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
     rowCount > 0
   }
 
+  val objectMapper = new ObjectMapper()
+
   @tailrec
   final override def next(): Row = {
     if (rowIterator != null && rowIterator.hasNext) {
@@ -48,7 +51,13 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
       rowCount -= 1
       val row = Row.newBuilder()
       columns.zip(items.asScala).foreach {
-        case (columnInfo, item) => row.putData(columnInfo.getName, databricksToRawValue(columnInfo, item))
+        case (columnInfo, item) =>
+          val colType = new DatabricksTextTypeParser(columnInfo.getTypeText).tipe
+          val jsonNode = colType match {
+            case _: DatabricksArrayType | _: DatabricksMapType | _: DatabricksStructType => objectMapper.readTree(item)
+            case _ => objectMapper.valueToTree[JsonNode](item)
+          }
+          row.putData(columnInfo.getName, databricksToRawValue(colType, jsonNode))
       }
       row.build()
     } else {
@@ -63,38 +72,51 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
     }
   }
 
-  private def databricksToRawValue(columnInfo: ColumnInfo, item: String): Value = {
+  private def databricksToRawValue(colType: DatabricksDataType, item: JsonNode): Value = {
     val builder = Value.newBuilder()
-    if (item == null) {
+    logger.debug(item.toString)
+    if (item.isNull) {
       builder.setNull(ValueNull.newBuilder().build())
-    } else columnInfo.getTypeName match {
-      case ColumnInfoTypeName.BYTE => builder.setByte(ValueByte.newBuilder().setV(item.toByte).build())
-      case ColumnInfoTypeName.SHORT => builder.setShort(ValueShort.newBuilder().setV(item.toShort).build())
-      case ColumnInfoTypeName.INT => builder.setInt(ValueInt.newBuilder().setV(item.toInt).build())
-      case ColumnInfoTypeName.LONG => builder.setLong(ValueLong.newBuilder().setV(item.toLong).build())
-      case ColumnInfoTypeName.FLOAT => builder.setFloat(ValueFloat.newBuilder().setV(item.toFloat).build())
-      case ColumnInfoTypeName.DOUBLE => builder.setDouble(ValueDouble.newBuilder().setV(item.toDouble).build())
-      case ColumnInfoTypeName.DECIMAL =>
+    } else colType match {
+      case DatabricksByteType => builder.setByte(ValueByte.newBuilder().setV(item.asText.toByte).build())
+      case DatabricksShortType => builder.setShort(ValueShort.newBuilder().setV(item.asText.toShort).build())
+      case DatabricksIntType => builder.setInt(ValueInt.newBuilder().setV(item.asText.toInt).build())
+      case DatabricksLongType => builder.setLong(ValueLong.newBuilder().setV(item.asText.toLong).build())
+      case DatabricksFloatType => builder.setFloat(ValueFloat.newBuilder().setV(item.asText.toFloat).build())
+      case DatabricksDoubleType => builder.setDouble(ValueDouble.newBuilder().setV(item.asText.toDouble).build())
+      case DatabricksDecimalType =>
         // TODO to be tested with a parquet file, extract the value from json
         ???
-      case ColumnInfoTypeName.STRING => builder.setString(ValueString.newBuilder().setV(item).build())
-      case ColumnInfoTypeName.BOOLEAN => builder.setBool(ValueBool.newBuilder().setV(item.toBoolean).build())
-      case ColumnInfoTypeName.BINARY =>
+      case DatabricksStringType => builder.setString(ValueString.newBuilder().setV(item.asText).build())
+      case DatabricksBooleanType => builder.setBool(ValueBool.newBuilder().setV(item.asText.toBoolean).build())
+      case DatabricksBinaryType =>
         // TODO to be tested with a parquet file
-        builder.setBinary(ValueBinary.newBuilder().setV(ByteString.copyFrom(item.getBytes)).build())
-      case ColumnInfoTypeName.STRUCT =>
-        // TODO extract the value from json
-        ???
-      case ColumnInfoTypeName.ARRAY =>
-        // TODO extract the value from json
-        ???
-      case ColumnInfoTypeName.DATE =>
-        val date = java.time.LocalDate.parse(item)
+        builder.setBinary(ValueBinary.newBuilder().setV(ByteString.copyFrom(item.asText.getBytes)).build())
+      case DatabricksStructType(fields) =>
+        val struct = ValueRecord.newBuilder()
+        fields.foreach {
+          case (name, fieldType) =>
+            val field = ValueRecordField.newBuilder()
+            field.setName(name)
+            field.setValue(databricksToRawValue(fieldType, item.get(name)))
+            struct.addFields(field)
+        }
+        builder.setRecord(struct)
+      case DatabricksArrayType(innerType) =>
+        val list = ValueList.newBuilder()
+        val items = item.elements()
+        while (items.hasNext) {
+          val i = items.next()
+          list.addValues(databricksToRawValue(innerType, i))
+        }
+        builder.setList(list)
+      case DatabricksDateType =>
+        val date = java.time.LocalDate.parse(item.asText)
         builder.setDate(
           ValueDate.newBuilder().setYear(date.getYear).setMonth(date.getMonthValue).setDay(date.getDayOfMonth).build()
         )
-      case ColumnInfoTypeName.TIMESTAMP =>
-        val timestamp = java.time.LocalDateTime.parse(item, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+      case DatabricksTimestampType =>
+        val timestamp = java.time.LocalDateTime.parse(item.asText, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         builder.setTimestamp(
           ValueTimestamp
             .newBuilder()
@@ -107,7 +129,7 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
             .setNano(timestamp.getNano)
             .build()
         )
-      case ColumnInfoTypeName.MAP =>
+      case DatabricksMapType(_, _) =>
         // TODO extract the value from json
         ??? // Any
       case t =>

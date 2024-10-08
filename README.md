@@ -25,10 +25,10 @@ CREATE SCHEMA databricks;
 IMPORT FOREIGN SCHEMA "default" FROM SERVER databricks INTO databricks;
 ```
 
-An example query using our `das_workspace` catalog and `default` schema:
+Then run a query:
 ```sql
-SELECT * FROM databricks.lineitem
-WHERE l_shipmode IN ('AIR', 'REG AIR')
-ORDER BY l_shipdate
+SELECT * FROM databricks.my_table
+WHERE ...
+ORDER BY ...
 LIMIT 10;
 ```
