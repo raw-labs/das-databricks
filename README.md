@@ -27,8 +27,8 @@ IMPORT FOREIGN SCHEMA "default" FROM SERVER databricks INTO databricks;
 
 Tables belonging to the catalog/schema are then exposed under the name `databricks`.
 ```sql
-SELECT * FROM databricks.lineitem
-WHERE l_shipmode IN ('AIR', 'REG AIR')
-ORDER BY l_shipdate
+SELECT * FROM databricks.my_table
+WHERE ...
+ORDER BY ...
 LIMIT 10;
 ```

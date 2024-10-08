@@ -13,11 +13,12 @@
 package com.rawlabs.das.databricks
 
 import com.databricks.sdk.WorkspaceClient
-import com.databricks.sdk.service.catalog.{ColumnInfo, ColumnTypeName, TableInfo}
+import com.databricks.sdk.service.catalog.{ColumnInfo, TableInfo}
 import com.databricks.sdk.service.sql._
+import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}
 import com.rawlabs.das.sdk.{DASExecuteResult, DASTable}
 import com.rawlabs.protocol.das._
-import com.rawlabs.protocol.raw.{Type, Value}
+import com.rawlabs.protocol.raw.{AttrType, ListType, Type, Value}
 import com.typesafe.scalalogging.StrictLogging
 
 import scala.annotation.tailrec
@@ -141,6 +142,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   private val REL_SIZE = (100, 100)
   private val POLLING_TIME = 1000
 
+  private val mapper = new ObjectMapper()
   val tableDefinition: TableDefinition = {
     val definition = TableDefinition.newBuilder().setTableId(TableId.newBuilder().setName(databricksTable.getName))
     if (databricksTable.getComment != null) definition.setDescription(databricksTable.getComment)
@@ -162,38 +164,71 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   }
 
   private def columnType(info: ColumnInfo): Option[Type] = {
+    val typeDescription = mapper.readTree(info.getTypeJson)
+    buildFromJson(typeDescription, _.get("type"), _.get("nullable").asBoolean())
+  }
+
+  private def buildFromJson(typeDescription: JsonNode, typeNameF: JsonNode => JsonNode, isNullableF: JsonNode => Boolean): Option[Type] = {
     val builder = Type.newBuilder()
-    val columnType = info.getTypeName
-    val isNullable = info.getNullable
-    columnType match {
-      case ColumnTypeName.BYTE =>
-        builder.setByte(com.rawlabs.protocol.raw.ByteType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.SHORT =>
-        builder.setShort(com.rawlabs.protocol.raw.ShortType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.INT =>
-        builder.setInt(com.rawlabs.protocol.raw.IntType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.LONG =>
-        builder.setLong(com.rawlabs.protocol.raw.LongType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.FLOAT =>
-        builder.setFloat(com.rawlabs.protocol.raw.FloatType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.DOUBLE =>
-        builder.setDouble(com.rawlabs.protocol.raw.DoubleType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.DECIMAL =>
-        builder.setDecimal(com.rawlabs.protocol.raw.DecimalType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.STRING =>
-        builder.setString(com.rawlabs.protocol.raw.StringType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.BOOLEAN =>
-        builder.setBool(com.rawlabs.protocol.raw.BoolType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.DATE =>
-        builder.setDate(com.rawlabs.protocol.raw.DateType.newBuilder().setTriable(false).setNullable(isNullable))
-      case ColumnTypeName.TIMESTAMP => builder.setTimestamp(
-          com.rawlabs.protocol.raw.TimestampType.newBuilder().setTriable(false).setNullable(isNullable)
-        )
-      case ColumnTypeName.STRUCT => return None // TODO needs to extract the type info from JSON
-      case ColumnTypeName.ARRAY => return None // TODO needs to extract the type info from JSON
-      case _ => throw new IllegalArgumentException(s"Unsupported column type: $columnType")
+    val isNullable = isNullableF(typeDescription)
+    typeNameF(typeDescription) match {
+      case n if n.isTextual =>
+        n.asText match {
+          case "byte" =>
+            builder.setByte(com.rawlabs.protocol.raw.ByteType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "short" =>
+            builder.setShort(com.rawlabs.protocol.raw.ShortType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "integer" =>
+            builder.setInt(com.rawlabs.protocol.raw.IntType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "long" =>
+            builder.setLong(com.rawlabs.protocol.raw.LongType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "float" =>
+            builder.setFloat(com.rawlabs.protocol.raw.FloatType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "double" => builder.setDouble(
+              com.rawlabs.protocol.raw.DoubleType.newBuilder().setTriable(false).setNullable(isNullable)
+            )
+          case "decimal" => builder.setDecimal(
+              com.rawlabs.protocol.raw.DecimalType.newBuilder().setTriable(false).setNullable(isNullable)
+            )
+          case "string" => builder.setString(
+              com.rawlabs.protocol.raw.StringType.newBuilder().setTriable(false).setNullable(isNullable)
+            )
+          case "boolean" =>
+            builder.setBool(com.rawlabs.protocol.raw.BoolType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "date" =>
+            builder.setDate(com.rawlabs.protocol.raw.DateType.newBuilder().setTriable(false).setNullable(isNullable))
+          case "timestamp" => builder.setTimestamp(
+              com.rawlabs.protocol.raw.TimestampType.newBuilder().setTriable(false).setNullable(isNullable)
+            )
+          case other => throw new IllegalArgumentException(s"Unsupported column type: $other")
+        }
+      case n if n.isObject =>
+        n.get("type").asText match {
+          case "struct" =>
+            val recordType = com.rawlabs.protocol.raw.RecordType.newBuilder().setTriable(false).setNullable(isNullable)
+            n
+              .get("fields")
+              .elements()
+              .forEachRemaining(field => {
+                val name = field.get("name").asText
+                val fieldType = buildFromJson(field, _.get("type"), _ => field.get("nullable").asBoolean())
+                if (fieldType.isEmpty) return None
+                recordType.addAtts(AttrType.newBuilder().setIdn(name).setTipe(fieldType.get))
+              })
+            builder.setRecord(recordType)
+          case "array" =>
+            buildFromJson(n.get("elementType"), identity, _ => n.get("containsNull").asBoolean()) match {
+              case Some(innerType) =>
+                builder.setList(ListType.newBuilder().setInnerType(innerType).setTriable(false).setNullable(isNullable))
+              case None => return None
+            }
+
+
+        }
     }
+
     Some(builder.build())
+
   }
 
   private def rawValueToDatabricksQueryString(v: Value): String = {
