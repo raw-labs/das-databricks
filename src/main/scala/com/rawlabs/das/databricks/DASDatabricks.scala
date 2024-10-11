@@ -14,7 +14,7 @@ package com.rawlabs.das.databricks
 
 import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.core.DatabricksConfig
-import com.databricks.sdk.service.catalog.ListTablesRequest
+import com.databricks.sdk.service.catalog.{GetTableRequest, ListTablesRequest}
 import com.databricks.sdk.service.sql.ListWarehousesRequest
 import com.rawlabs.das.sdk.{DASFunction, DASSdk, DASTable}
 import com.rawlabs.protocol.das.{FunctionDefinition, TableDefinition}
@@ -41,7 +41,11 @@ class DASDatabricks(options: Map[String, String]) extends DASSdk {
     val databricksTables = databricksClient.tables().list(req)
     val tables = mutable.Map.empty[String, DASDatabricksTable]
     databricksTables.forEach { databricksTable =>
-      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, warehouse, databricksTable))
+      // `databricksTable` is a `TableInfo` but its `getTableConstraints` isn't populated
+      // We need to issue the individual `GetTableRequest` calls.
+      val tableReq = new GetTableRequest().setFullName(catalog + '.' + schema + '.' + databricksTable.getName)
+      val info = databricksClient.tables().get(tableReq)
+      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, warehouse, info))
     }
     tables.toMap
   }

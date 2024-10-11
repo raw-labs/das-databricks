@@ -22,6 +22,7 @@ import com.typesafe.scalalogging.StrictLogging
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
+import scala.collection.mutable
 
 class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databricksTable: TableInfo)
     extends DASTable
@@ -93,9 +94,11 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
 
     stmt.setStatement(query).setWarehouseId(warehouseID).setDisposition(Disposition.INLINE).setFormat(Format.JSON_ARRAY)
     val executeAPI = client.statementExecution()
-    val response1 = executeAPI.executeStatement(stmt)
-    val response = getResult(response1)
-    new DASDatabricksExecuteResult(executeAPI, response)
+    val response = executeAPI.executeStatement(stmt)
+    getResult(response) match {
+      case Left(error) => throw new RuntimeException(error)
+      case Right(result) => new DASDatabricksExecuteResult(executeAPI, result)
+    }
   }
 
   private def databricksColumnName(name: String): String = {
@@ -119,21 +122,19 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   override def canSort(sortKeys: Seq[SortKey]): Seq[SortKey] = sortKeys
 
   @tailrec
-  private def getResult(response: StatementResponse): StatementResponse = {
+  private def getResult(response: StatementResponse): Either[String, StatementResponse] = {
     val state = response.getStatus.getState
     logger.info(s"Query ${response.getStatementId} state: $state")
     state match {
       case StatementState.PENDING | StatementState.RUNNING =>
+        logger.info(s"Query is still running, polling again in $POLLING_TIME ms")
         Thread.sleep(POLLING_TIME)
         val response2 = client.statementExecution().getStatement(response.getStatementId)
         getResult(response2)
-      case StatementState.SUCCEEDED => response
-      case StatementState.FAILED =>
-        throw new RuntimeException(s"Query failed: ${response.getStatus.getError.getMessage}")
-      case StatementState.CLOSED =>
-        throw new RuntimeException(s"Query closed: ${response.getStatus.getError.getMessage}")
-      case StatementState.CANCELED =>
-        throw new RuntimeException(s"Query canceled: ${response.getStatus.getError.getMessage}")
+      case StatementState.SUCCEEDED => Right(response)
+      case StatementState.FAILED => Left(s"Query failed: ${response.getStatus.getError.getMessage}")
+      case StatementState.CLOSED => Left(s"Query closed: ${response.getStatus.getError.getMessage}")
+      case StatementState.CANCELED => Left(s"Query canceled: ${response.getStatus.getError.getMessage}")
     }
   }
 
@@ -159,6 +160,24 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     }
     definition.setStartupCost(STARTUP_COST)
     definition.build()
+  }
+
+  // We store the potential key as an Option, so that we're aware whether or not
+  // it is what Databricks told us. For example we could forbid UPDATE or DELETE
+  // if no primary column was found.
+  private var primaryKeyColumn: Option[String] = None
+  if (databricksTable.getTableConstraints != null) {
+    databricksTable.getTableConstraints.forEach { constraint =>
+      val primaryKeyConstraint = constraint.getPrimaryKeyConstraint
+      if (primaryKeyConstraint != null) {
+        if (primaryKeyConstraint.getChildColumns.size != 1) {
+          logger.warn("Ignoring composite primary key")
+        } else {
+          primaryKeyColumn = Some(primaryKeyConstraint.getChildColumns.iterator().next())
+          logger.info(s"Found primary key ($primaryKeyColumn)")
+        }
+      }
+    }
   }
 
   private def columnType(info: ColumnInfo): Option[Type] = {
@@ -230,6 +249,11 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     }
   }
 
+  override def uniqueColumn: String = {
+    // Return the first column if none.
+    primaryKeyColumn.getOrElse(databricksTable.getColumns.asScala.head.getName)
+  }
+
   private def rawValueToParameter(v: Value): StatementParameterListItem = {
     logger.debug(s"Converting value to parameter: $v")
     val parameter = new StatementParameterListItem()
@@ -286,4 +310,90 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     }
   }
 
+  override def insert(row: Row): Row = {
+    bulkInsert(Seq(row)).head
+  }
+
+  override def modifyBatchSize: Int = {
+    // Technically unlimited
+    1000
+  }
+
+  // We don't want to send gigantic query strings if ever we'd
+  // be inserting large strings even in few rows. So we try to keep
+  // queries around that size.
+  private val MAX_INSERT_CODE_SIZE = 2048
+
+  override def bulkInsert(rows: Seq[Row]): Seq[Row] = {
+    // There's no bulk call in Databricks, we're obliged to inline
+    // values. We build a query string that's at most of the max size
+    // and loop until all rows are consumed.
+    val columnNames = databricksTable.getColumns.asScala.map(_.getName)
+    val values = rows.map { row =>
+      val data = row.getDataMap
+      columnNames
+        .map { name =>
+          val value = data.get(name)
+          if (value == null) {
+            "DEFAULT"
+          } else {
+            rawValueToDatabricksQueryString(value)
+          }
+        }
+        .mkString("(", ",", ")")
+    }
+    val stmt = new ExecuteStatementRequest()
+      .setWarehouseId(warehouseID)
+      .setDisposition(Disposition.INLINE)
+      .setFormat(Format.JSON_ARRAY)
+
+    val items = values.iterator
+    while (items.nonEmpty) {
+      val item = items.next()
+      val code = StringBuilder.newBuilder
+      code.append(s"INSERT INTO ${databricksTable.getName} VALUES $item")
+      while (code.size < MAX_INSERT_CODE_SIZE && items.hasNext) {
+        code.append(s",${items.next()}")
+      }
+      stmt.setStatement(code.toString())
+      val executeAPI = client.statementExecution()
+      val response = executeAPI.executeStatement(stmt)
+      getResult(response).left.foreach(error => throw new RuntimeException(error))
+    }
+    rows
+  }
+
+  override def delete(rowId: Value): Unit = {
+    val stmt = new ExecuteStatementRequest()
+      .setWarehouseId(warehouseID)
+      .setDisposition(Disposition.INLINE)
+      .setFormat(Format.JSON_ARRAY)
+    stmt.setStatement(
+      s"DELETE FROM ${databricksTable.getName} WHERE ${databricksColumnName(uniqueColumn)} = ${rawValueToDatabricksQueryString(rowId)}"
+    )
+    val executeAPI = client.statementExecution()
+    val response = executeAPI.executeStatement(stmt)
+    getResult(response).left.foreach(error => throw new RuntimeException(error))
+  }
+
+  override def update(rowId: Value, newValues: Row): Row = {
+    val buffer = mutable.Buffer.empty[String]
+    newValues.getDataMap
+      .forEach {
+        case (name, value) =>
+          buffer.append(s"${databricksColumnName(name)} = ${rawValueToDatabricksQueryString(value)}")
+      }
+    val setValues = buffer.mkString(", ")
+    val stmt = new ExecuteStatementRequest()
+      .setWarehouseId(warehouseID)
+      .setDisposition(Disposition.INLINE)
+      .setFormat(Format.JSON_ARRAY)
+    stmt.setStatement(
+      s"UPDATE ${databricksTable.getName} SET $setValues WHERE ${databricksColumnName(uniqueColumn)} = ${rawValueToDatabricksQueryString(rowId)}"
+    )
+    val executeAPI = client.statementExecution()
+    val response = executeAPI.executeStatement(stmt)
+    getResult(response).left.foreach(error => throw new RuntimeException(error))
+    newValues
+  }
 }
