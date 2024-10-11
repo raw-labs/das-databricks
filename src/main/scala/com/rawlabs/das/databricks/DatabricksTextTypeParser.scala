@@ -12,8 +12,11 @@
 
 package com.rawlabs.das.databricks
 
-class DatabricksTextTypeParser(input: String) {
+import com.typesafe.scalalogging.StrictLogging
 
+class DatabricksTextTypeParser(input: String) extends StrictLogging {
+
+  logger.debug(s"parsing type $input")
   var offset = 0
 
   private def parseType(): Either[String, DatabricksDataType] = {
@@ -21,7 +24,7 @@ class DatabricksTextTypeParser(input: String) {
       Right(DatabricksByteType)
     } else if (tryToConsume("SHORT")) {
       Right(DatabricksShortType)
-    } else if (tryToConsume("INTEGER")) {
+    } else if (tryToConsume("INT")) {
       Right(DatabricksIntType)
     } else if (tryToConsume("BIGINT")) {
       Right(DatabricksLongType)
@@ -120,6 +123,9 @@ class DatabricksTextTypeParser(input: String) {
     }
   }
 
-  val tipe = parseType().right.get
+  val tipe = parseType() match {
+    case Right(t) => t
+    case Left(e) => throw new IllegalArgumentException(e)
+  }
 
 }
