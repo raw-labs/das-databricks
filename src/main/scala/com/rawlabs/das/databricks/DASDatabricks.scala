@@ -14,7 +14,7 @@ package com.rawlabs.das.databricks
 
 import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.core.DatabricksConfig
-import com.databricks.sdk.service.catalog.ListTablesRequest
+import com.databricks.sdk.service.catalog.{GetTableRequest, ListTablesRequest}
 import com.databricks.sdk.service.sql.ListWarehousesRequest
 import com.rawlabs.das.sdk.{DASFunction, DASSdk, DASTable}
 import com.rawlabs.protocol.das.{FunctionDefinition, TableDefinition}
@@ -41,7 +41,15 @@ class DASDatabricks(options: Map[String, String]) extends DASSdk {
     val databricksTables = databricksClient.tables().list(req)
     val tables = mutable.Map.empty[String, DASDatabricksTable]
     databricksTables.forEach { databricksTable =>
-      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, warehouse, databricksTable))
+      // `databricksTable` is a `TableInfo` and its `getTableConstraints` permits us to know
+      // if it has a primary key column, which we could use for UPDATE calls. But it's not populated.
+      // We have to issue an individual `GetTableRequest` call (the single table one, that returns the same
+      // object but with constraints provided).
+      val tableDetails = {
+        val tableReq = new GetTableRequest().setFullName(catalog + '.' + schema + '.' + databricksTable.getName)
+        databricksClient.tables().get(tableReq)
+      }
+      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, warehouse, tableDetails))
     }
     tables.toMap
   }
