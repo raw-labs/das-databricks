@@ -193,6 +193,9 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
           case "string" => builder.setString(
               com.rawlabs.protocol.raw.StringType.newBuilder().setTriable(false).setNullable(isNullable)
             )
+          case other if other.startsWith("varchar") => builder.setString(
+            com.rawlabs.protocol.raw.StringType.newBuilder().setTriable(false).setNullable(isNullable)
+          )
           case "boolean" =>
             builder.setBool(com.rawlabs.protocol.raw.BoolType.newBuilder().setTriable(false).setNullable(isNullable))
           case "date" =>
