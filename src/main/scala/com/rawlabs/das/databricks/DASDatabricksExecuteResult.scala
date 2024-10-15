@@ -15,7 +15,7 @@ package com.rawlabs.das.databricks
 import com.databricks.sdk.service.sql._
 import com.google.protobuf.ByteString
 import com.rawlabs.das.sdk.DASExecuteResult
-import com.rawlabs.protocol.das.Row
+import com.rawlabs.protocol.das.{Column, Row}
 import com.rawlabs.protocol.raw._
 import com.typesafe.scalalogging.StrictLogging
 
@@ -48,7 +48,15 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
       rowCount -= 1
       val row = Row.newBuilder()
       columns.zip(items.asScala).foreach {
-        case (columnInfo, item) => row.putData(columnInfo.getName, databricksToRawValue(columnInfo, item))
+        case (columnInfo, item) => row
+            .addColumns(
+              Column
+                .newBuilder()
+                .setName(columnInfo.getName)
+                .setData(databricksToRawValue(columnInfo, item))
+                .build()
+            )
+            .build()
       }
       row.build()
     } else {

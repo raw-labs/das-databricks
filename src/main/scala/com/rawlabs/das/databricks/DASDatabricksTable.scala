@@ -12,7 +12,6 @@
 
 package com.rawlabs.das.databricks
 
-import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.service.catalog.{ColumnInfo, ColumnTypeName, TableInfo}
 import com.databricks.sdk.service.sql._
 import com.rawlabs.das.sdk.{DASExecuteResult, DASTable}
@@ -20,10 +19,10 @@ import com.rawlabs.protocol.das._
 import com.rawlabs.protocol.raw.{Type, Value}
 import com.typesafe.scalalogging.StrictLogging
 
-import scala.annotation.tailrec
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
+import scala.collection.mutable
 
-class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databricksTable: TableInfo)
+class DASDatabricksTable(databricksUtils: DASDatabricksUtils, databricksTable: TableInfo)
     extends DASTable
     with StrictLogging {
 
@@ -37,8 +36,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   ): DASExecuteResult = {
     val databricksColumns = if (columns.isEmpty) Seq("NULL") else columns.map(databricksColumnName)
     var query = s"SELECT ${databricksColumns.mkString(",")} FROM " + databricksTable.getName
-    val stmt = new ExecuteStatementRequest()
-    val parameters = new java.util.LinkedList[StatementParameterListItem]
+    val parameters = mutable.ArrayBuffer[StatementParameterListItem]()
     if (quals.nonEmpty) {
       val predicates = quals.zipWithIndex.map {
         case (qual, idx) =>
@@ -48,7 +46,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
             val column = databricksColumnName(qual.getFieldName)
             val arg = "arg" + idx
             parameter.setName(arg)
-            parameters.add(parameter)
+            parameters.append(parameter)
             s"$column $operator :$arg"
           } else if (qual.hasListQual) {
             val listQual = qual.getListQual
@@ -74,7 +72,6 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
           }
       }
       query += " WHERE " + predicates.mkString(" AND ")
-      stmt.setParameters(parameters)
     }
 
     if (maybeSortKeys.nonEmpty) {
@@ -90,11 +87,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
       query += " LIMIT " + maybeLimit.get
     }
 
-    stmt.setStatement(query).setWarehouseId(warehouseID).setDisposition(Disposition.INLINE).setFormat(Format.JSON_ARRAY)
-    val executeAPI = client.statementExecution()
-    val response1 = executeAPI.executeStatement(stmt)
-    val response = getResult(response1)
-    new DASDatabricksExecuteResult(executeAPI, response)
+    databricksUtils.execute(query, parameters)
   }
 
   private def databricksColumnName(name: String): String = {
@@ -102,43 +95,22 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   }
 
   private def databricksOperator(op: Operator): String = {
-    {
-      if (op.hasEquals) "="
-      else if (op.hasGreaterThan) ">"
-      else if (op.hasGreaterThanOrEqual) ">="
-      else if (op.hasLessThan) "<"
-      else if (op.hasLessThanOrEqual) "<="
-      else {
-        assert(op.hasNotEquals)
-        "<>"
-      }
+
+    op.getType match {
+      case OperatorType.EQUALS => "="
+      case OperatorType.GREATER_THAN => ">"
+      case OperatorType.GREATER_THAN_OR_EQUAL => ">="
+      case OperatorType.LESS_THAN => "<"
+      case OperatorType.LESS_THAN_OR_EQUAL => "<="
+      case OperatorType.NOT_EQUALS => "<>"
+      case _ => throw new IllegalArgumentException(s"Unsupported operator: ${op.getType}")
     }
   }
 
   override def canSort(sortKeys: Seq[SortKey]): Seq[SortKey] = sortKeys
 
-  @tailrec
-  private def getResult(response: StatementResponse): StatementResponse = {
-    val state = response.getStatus.getState
-    logger.info(s"Query ${response.getStatementId} state: $state")
-    state match {
-      case StatementState.PENDING | StatementState.RUNNING =>
-        Thread.sleep(POLLING_TIME)
-        val response2 = client.statementExecution().getStatement(response.getStatementId)
-        getResult(response2)
-      case StatementState.SUCCEEDED => response
-      case StatementState.FAILED =>
-        throw new RuntimeException(s"Query failed: ${response.getStatus.getError.getMessage}")
-      case StatementState.CLOSED =>
-        throw new RuntimeException(s"Query closed: ${response.getStatus.getError.getMessage}")
-      case StatementState.CANCELED =>
-        throw new RuntimeException(s"Query canceled: ${response.getStatus.getError.getMessage}")
-    }
-  }
-
   private val STARTUP_COST = 3000
   private val REL_SIZE = (100, 100)
-  private val POLLING_TIME = 1000
 
   val tableDefinition: TableDefinition = {
     val definition = TableDefinition.newBuilder().setTableId(TableId.newBuilder().setName(databricksTable.getName))
@@ -283,6 +255,30 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     } else {
       throw new IllegalArgumentException(s"Unsupported value: $v")
     }
+  }
+
+  override def uniqueColumn: String = {
+    "l_orderkey"
+  }
+
+  override def insert(row: Row): Row = {
+    logger.info("Received insert request for row: " + row)
+    ???
+  }
+
+  override def bulkInsert(rows: Seq[Row]): Seq[Row] = {
+    logger.info("Received bulk insert request for rows: " + rows)
+    ???
+  }
+
+  override def update(rowId: Value, newValues: Row): Row = {
+    logger.info("Received update request for row: " + rowId + " with new values: " + newValues)
+    ???
+  }
+
+  override def delete(rowId: Value): Unit = {
+    logger.info("Received delete request for row: " + rowId)
+    ???
   }
 
 }

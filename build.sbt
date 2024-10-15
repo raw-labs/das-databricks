@@ -109,7 +109,7 @@ lazy val root = (project in file("."))
     strictBuildSettings,
     publishSettings,
     libraryDependencies ++= Seq(
-      "com.raw-labs" %% "das-sdk-scala" % "0.1.3" % "compile->compile;test->test",
+      "com.raw-labs" %% "das-sdk-scala" % "0.1.3-sql-support-SNAPSHOT" % "compile->compile;test->test",
       "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
     )
   )
@@ -213,5 +213,5 @@ lazy val docker = (project in file("docker"))
   .settings(
     strictBuildSettings,
     dockerSettings,
-    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.1.5" % "compile->compile;test->test")
+    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.1.5-sql-support-SNAPSHOT" % "compile->compile;test->test")
   )
