@@ -207,7 +207,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     else if (v.hasString) {
       // This needs to be escaped for SQL queries
       val str = v.getString.getV
-      '\'' + str.replace("'", "''") + '\''
+      '\'' + str.replace("'", "\\'") + '\''
     } else if (v.hasBool) v.getBool.getV.toString
     else if (v.hasNull) "NULL"
     else if (v.hasDate) {
