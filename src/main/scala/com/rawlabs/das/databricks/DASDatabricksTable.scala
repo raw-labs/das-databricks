@@ -36,7 +36,8 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
       maybeLimit: Option[Long]
   ): DASExecuteResult = {
     val databricksColumns = if (columns.isEmpty) Seq("NULL") else columns.map(databricksColumnName)
-    var query = s"SELECT ${databricksColumns.mkString(",")} FROM " + databricksTable.getName
+    var query =
+      s"SELECT ${databricksColumns.mkString(",")} FROM " + databricksTable.getSchemaName + '.' + databricksTable.getName
     val stmt = new ExecuteStatementRequest()
     val parameters = new java.util.LinkedList[StatementParameterListItem]
     if (quals.nonEmpty) {
