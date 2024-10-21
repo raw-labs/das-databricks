@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-*"
 
 env:
   GITHUB_TOKEN: ${{ secrets.WRITE_PACKAGES }}
@@ -22,6 +23,8 @@ jobs:
       run: sbt clean publish
   publish-docker-image:
     runs-on: self-hosted
+    outputs:
+      should_trigger_deploy: ${{ steps.should_trigger_deploy.outputs.should_trigger_deploy }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -34,3 +37,29 @@ jobs:
         logout: false
     - name: publish docker images
       run: .github/scripts/dnd-sbt docker/Docker/publish
+    - name: set should_trigger_deploy
+      id: should_trigger_deploy
+      shell: bash
+      run: |
+        pattern='^refs/tags/v[0-9]+\.[0-9]+\.([1-9][0-9]*$|[0-9]+-.*$)'
+        echo "should_trigger_deploy=$([[ "$GITHUB_REF" =~ $pattern ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+  trigger-deploy:
+      needs: publish-docker-image
+      if: needs.publish-docker-image.outputs.should_trigger_deploy == 'true'
+      runs-on: ubuntu-latest
+      steps:
+        - name: tag without 'v' prefix
+          id: extract_tag
+          run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        - name: trigger mvp-deployer workflow
+          uses: peter-evans/repository-dispatch@v3
+          with:
+            token: ${{ secrets.RAW_CI_PAT }}
+            repository: raw-labs/mvp-deployer
+            event-type: deploy-patch
+            client-payload: |
+              {
+                "raw_version": "${{ steps.extract_tag.outputs.raw_version }}",
+                "target_env": "integration",
+                "loaded_vars": "integration"
+              }
