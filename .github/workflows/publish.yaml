@@ -4,9 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
-
-env:
-  GITHUB_TOKEN: ${{ secrets.WRITE_PACKAGES }}
+      - "v*.*.*-*"
 
 jobs:
   publish-jars:
@@ -43,15 +41,14 @@ jobs:
         pattern='^refs/tags/v[0-9]+\.[0-9]+\.(?:[1-9][0-9]*|[0-9]+-.*)$'
         echo "should_trigger_deploy=$([[ "$GITHUB_REF" =~ $pattern ]] && echo true || echo false)" >> $GITHUB_OUTPUT
   trigger-deploy:
-      name: Trigger Deploy
       needs: publish-docker-image
       if: needs.publish-docker-image.outputs.should_trigger_deploy == 'true'
       runs-on: ubuntu-latest
       steps:
-        - name: Extract tag without 'v' prefix
+        - name: tag without 'v' prefix
           id: extract_tag
           run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        - name: Trigger deploy workflow in mvp-deployer
+        - name: trigger mvp-deployer workflow
           uses: peter-evans/repository-dispatch@v2
           with:
             token: ${{ secrets.RAW_CI_PAT }}
