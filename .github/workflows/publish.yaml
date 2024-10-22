@@ -56,10 +56,12 @@ jobs:
           with:
             token: ${{ secrets.RAW_CI_PAT }}
             repository: raw-labs/mvp-deployer
-            event-type: deploy-patch
-            client-payload: |
+            event-type: deploy-patch-das-databricks
+            client-payload: |-
               {
-                "raw_version": "${{ steps.extract_tag.outputs.raw_version }}",
+                "aws_region": "eu-west-1",
+                "raw_version": "${{ steps.extract_tag.outputs.version }}",
                 "target_env": "integration",
-                "loaded_vars": "integration"
+                "loaded_vars": "integration",
+                "deployer_version": "latest"
               }
