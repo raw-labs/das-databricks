@@ -43,6 +43,20 @@ jobs:
       run: |
         pattern='^refs/tags/v[0-9]+\.[0-9]+\.([1-9][0-9]*$|[0-9]+-.*$)'
         echo "should_trigger_deploy=$([[ "$GITHUB_REF" =~ $pattern ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+  gh-release:
+    needs: [publish-jars, publish-docker-image]
+    runs-on: self-hosted
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ secrets.RAW_CI_PAT }}
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+        tag_name: ${{ github.ref_name }}
   trigger-deploy:
       needs: publish-docker-image
       if: needs.publish-docker-image.outputs.should_trigger_deploy == 'true'
