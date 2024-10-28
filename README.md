@@ -25,7 +25,7 @@ CREATE SCHEMA databricks;
 IMPORT FOREIGN SCHEMA "default" FROM SERVER databricks INTO databricks;
 ```
 
-An example query using our `das_workspace` catalog and `default` schema:
+Tables belonging to the catalog/schema are then exposed under the name `databricks`.
 ```sql
 SELECT * FROM databricks.lineitem
 WHERE l_shipmode IN ('AIR', 'REG AIR')
