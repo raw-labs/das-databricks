@@ -41,8 +41,8 @@ jobs:
       id: should_trigger_deploy
       shell: bash
       run: |
-        pattern='^refs/tags/v[0-9]+\.[0-9]+\.([1-9][0-9]*$|[0-9]+-.*$)'
-        echo "should_trigger_deploy=$([[ "$GITHUB_REF" =~ $pattern ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+        pattern='^refs/tags/v[0-9]+\.0\.0$'
+        echo "should_trigger_deploy=$([[ "$GITHUB_REF" =~ $pattern ]] && echo false || echo true)" >> $GITHUB_OUTPUT
   gh-release:
     needs: [publish-jars, publish-docker-image]
     runs-on: self-hosted
