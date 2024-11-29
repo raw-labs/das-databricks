@@ -19,7 +19,6 @@ lazy val commonSettings = Seq(
   // Use cached resolution of dependencies
   // http://www.scala-sbt.org/0.13/docs/Cached-Resolution.html
   updateOptions := updateOptions.in(Global).value.withCachedResolution(true),
-  resolvers ++= Seq(Resolver.mavenLocal),
   resolvers += "RAW Labs GitHub Packages" at "https://maven.pkg.github.com/raw-labs/_"
 )
 
@@ -105,8 +104,8 @@ lazy val root = (project in file("."))
     strictBuildSettings,
     publishSettings,
     libraryDependencies ++= Seq(
-      "com.raw-labs" %% "das-sdk-scala" % "0.1.3" % "compile->compile;test->test",
-      "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
+      "com.raw-labs" %% "das-sdk-scala" % "0.1.4" % "compile->compile;test->test",
+      "com.databricks" % "databricks-sdk-java" % "0.32.2" % "compile->compile"
     )
   )
 
@@ -209,5 +208,5 @@ lazy val docker = (project in file("docker"))
   .settings(
     strictBuildSettings,
     dockerSettings,
-    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.1.5" % "compile->compile;test->test")
+    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.1.6" % "compile->compile;test->test")
   )
