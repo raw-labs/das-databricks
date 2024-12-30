@@ -356,7 +356,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
       stmt.setStatement(code.toString())
       val executeAPI = client.statementExecution()
       val response = executeAPI.executeStatement(stmt)
-      getResult(response).left.foreach(error => throw new RuntimeException(error))
+      getResult(response).left.foreach(error => throw new DASSdkException(error))
     }
     rows
   }
@@ -374,7 +374,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     )
     val executeAPI = client.statementExecution()
     val response = executeAPI.executeStatement(stmt)
-    getResult(response).left.foreach(error => throw new RuntimeException(error))
+    getResult(response).left.foreach(error => throw new DASSdkException(error))
   }
 
   // How many rows are accepted in a batch update. Technically we're unlimited
