@@ -15,13 +15,27 @@ package com.rawlabs.das.databricks
 import com.databricks.sdk.service.sql._
 import com.google.protobuf.ByteString
 import com.rawlabs.das.sdk.DASExecuteResult
-import com.rawlabs.protocol.das.Row
-import com.rawlabs.protocol.raw._
+import com.rawlabs.protocol.das.v1.tables.{Column, Row}
+import com.rawlabs.protocol.das.v1.types.{
+  Value,
+  ValueBinary,
+  ValueBool,
+  ValueByte,
+  ValueDate,
+  ValueDouble,
+  ValueFloat,
+  ValueInt,
+  ValueLong,
+  ValueNull,
+  ValueShort,
+  ValueString,
+  ValueTimestamp
+}
 import com.typesafe.scalalogging.StrictLogging
 
 import java.time.format.DateTimeFormatter
 import scala.annotation.tailrec
-import scala.collection.JavaConverters.collectionAsScalaIterableConverter
+import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, response: StatementResponse)
     extends DASExecuteResult
@@ -48,7 +62,8 @@ class DASDatabricksExecuteResult(statementExecutionAPI: StatementExecutionAPI, r
       rowCount -= 1
       val row = Row.newBuilder()
       columns.zip(items.asScala).foreach {
-        case (columnInfo, item) => row.putData(columnInfo.getName, databricksToRawValue(columnInfo, item))
+        case (columnInfo, item) => row
+            .addColumns(Column.newBuilder().setName(columnInfo.getName).setData(databricksToRawValue(columnInfo, item)))
       }
       row.build()
     } else {

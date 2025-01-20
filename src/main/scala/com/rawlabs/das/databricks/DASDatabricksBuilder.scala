@@ -12,13 +12,13 @@
 
 package com.rawlabs.das.databricks
 
-import com.rawlabs.das.sdk.{DASSdk, DASSdkBuilder}
-import com.rawlabs.utils.core.RawSettings
+import com.rawlabs.das.sdk.DASSettings
+import com.rawlabs.das.sdk.scala.{DASSdk, DASSdkBuilder}
 
 class DASDatabricksBuilder extends DASSdkBuilder {
 
   override def dasType: String = "databricks"
 
-  override def build(options: Map[String, String])(implicit settings: RawSettings): DASSdk = new DASDatabricks(options)
+  override def build(options: Map[String, String])(implicit settings: DASSettings): DASSdk = new DASDatabricks(options)
 
 }
