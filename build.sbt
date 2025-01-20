@@ -24,7 +24,7 @@ lazy val commonSettings = Seq(
 )
 
 lazy val buildSettings = Seq(
-  scalaVersion := "2.12.18",
+  scalaVersion := "2.13.16",
   javacOptions ++= Seq(
     "-source",
     "21",
@@ -34,10 +34,6 @@ lazy val buildSettings = Seq(
   scalacOptions ++= Seq(
     "-feature",
     "-unchecked",
-    // When compiling in encrypted drives in Linux, the max size of a name is reduced to around 140
-    // https://unix.stackexchange.com/a/32834
-    "-Xmax-classfile-name",
-    "140",
     "-deprecation",
     "-Xlint:-stars-align,_",
     "-Ywarn-dead-code",
@@ -46,6 +42,17 @@ lazy val buildSettings = Seq(
     "160"
   )
 )
+
+lazy val chronicleFlags = Seq(
+  "--add-exports=java.base/jdk.internal.ref=ALL-UNNAMED",
+  "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
+  "--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED",
+  "--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
+  "--add-opens=jdk.compiler/com.sun.tools.javac=ALL-UNNAMED",
+  "--add-opens=java.base/java.lang=ALL-UNNAMED",
+  "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+  "--add-opens=java.base/java.io=ALL-UNNAMED",
+  "--add-opens=java.base/java.util=ALL-UNNAMED")
 
 lazy val compileSettings = Seq(
   Compile / doc / sources := Seq.empty,
@@ -56,7 +63,10 @@ lazy val compileSettings = Seq(
     "Automatic-Module-Name" -> name.value.replace('-', '.')
   ),
   // Ensure Java annotations get compiled first, so that they are accessible from Scala.
-  compileOrder := CompileOrder.JavaThenScala
+  compileOrder := CompileOrder.JavaThenScala,
+  // Ensure we fork new JVM for run, so we can set JVM flags.
+  Compile / run / fork := true,
+  Compile / run / javaOptions ++= chronicleFlags
 )
 
 lazy val testSettings = Seq(
@@ -105,7 +115,8 @@ lazy val root = (project in file("."))
     strictBuildSettings,
     publishSettings,
     libraryDependencies ++= Seq(
-      "com.raw-labs" %% "das-sdk-scala" % "0.1.3" % "compile->compile;test->test",
+      "com.raw-labs" %% "protocol-das" % "1.0.0-beta" % "compile->compile;test->test",
+      "com.raw-labs" %% "das-server-scala" % "1.0.0-beta" % "compile->compile;test->test",
       "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
     )
   )
@@ -183,7 +194,7 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
     }
     case lm @ _ => lm
   },
-  Compile / mainClass := Some("com.rawlabs.das.server.DASServerMain"),
+  Compile / mainClass := Some("com.rawlabs.das.server.DASServer"),
   Docker / dockerAutoremoveMultiStageIntermediateImages := false,
   dockerAlias := dockerAlias.value.withTag(Option(version.value.replace("+", "-"))),
   dockerAliases := {
@@ -209,5 +220,5 @@ lazy val docker = (project in file("docker"))
   .settings(
     strictBuildSettings,
     dockerSettings,
-    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.1.5" % "compile->compile;test->test")
+    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "1.0.0-beta" % "compile->compile;test->test")
   )
