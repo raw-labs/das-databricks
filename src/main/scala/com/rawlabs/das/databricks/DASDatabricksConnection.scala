@@ -16,7 +16,7 @@ import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.core.DatabricksConfig
 import com.databricks.sdk.service.catalog.{ListTablesRequest, TableInfo}
 
-import scala.collection.JavaConverters.iterableAsScalaIterableConverter
+import scala.jdk.CollectionConverters.IterableHasAsScala
 
 class DASDatabricksConnection(options: Map[String, String]) {
 
