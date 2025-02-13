@@ -30,11 +30,37 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     extends DASTable
     with StrictLogging {
 
-  override def execute(quals: Seq[Qual], columns: Seq[String], sortKeys: Seq[SortKey]): DASExecuteResult = {
+  override def explain(
+      quals: Seq[Qual],
+      columns: Seq[String],
+      sortKeys: Seq[SortKey],
+      maybeLimit: Option[Long]
+  ): Seq[String] = {
+    val (query, parameters) = buildQuery(quals, columns, sortKeys, maybeLimit)
+    query.split("\n").toSeq ++ parameters.asScala.map(p => s"${p.getName} = ${p.getValue}")
+  }
+
+  override def execute(
+      quals: Seq[Qual],
+      columns: Seq[String],
+      sortKeys: Seq[SortKey],
+      maybeLimit: Option[Long]
+  ): DASExecuteResult = {
+    val (query, parameters) = buildQuery(quals, columns, sortKeys, maybeLimit)
+    val stmt = new ExecuteStatementRequest()
+    stmt.setParameters(parameters)
+
+    stmt.setStatement(query).setWarehouseId(warehouseID).setDisposition(Disposition.INLINE).setFormat(Format.JSON_ARRAY)
+    val executeAPI = client.statementExecution()
+    val response1 = executeAPI.executeStatement(stmt)
+    val response = getResult(response1)
+    new DASDatabricksExecuteResult(executeAPI, response)
+  }
+
+  private def buildQuery(quals: Seq[Qual], columns: Seq[String], sortKeys: Seq[SortKey], maybeLimit: Option[Long]) = {
     val databricksColumns = if (columns.isEmpty) Seq("NULL") else columns.map(databricksColumnName)
     var query =
       s"SELECT ${databricksColumns.mkString(",")} FROM " + databricksTable.getSchemaName + '.' + databricksTable.getName
-    val stmt = new ExecuteStatementRequest()
     val parameters = new java.util.LinkedList[StatementParameterListItem]
     if (quals.nonEmpty) {
       val predicates = quals.zipWithIndex.map {
@@ -73,7 +99,6 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
           }
       }
       query += " WHERE " + predicates.mkString(" AND ")
-      stmt.setParameters(parameters)
     }
 
     if (sortKeys.nonEmpty) {
@@ -86,11 +111,10 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
         .mkString(", ")
     }
 
-    stmt.setStatement(query).setWarehouseId(warehouseID).setDisposition(Disposition.INLINE).setFormat(Format.JSON_ARRAY)
-    val executeAPI = client.statementExecution()
-    val response1 = executeAPI.executeStatement(stmt)
-    val response = getResult(response1)
-    new DASDatabricksExecuteResult(executeAPI, response)
+    maybeLimit.foreach(limit => query += s" LIMIT $limit")
+
+    (query, parameters)
+
   }
 
   private def databricksColumnName(name: String): String = {
