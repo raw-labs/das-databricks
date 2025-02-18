@@ -12,6 +12,8 @@
 
 package com.rawlabs.das.databricks
 
+import scala.collection.mutable
+
 import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.core.DatabricksConfig
 import com.databricks.sdk.service.catalog.ListTablesRequest
@@ -19,8 +21,6 @@ import com.databricks.sdk.service.sql.ListWarehousesRequest
 import com.rawlabs.das.sdk.scala.{DASFunction, DASSdk, DASTable}
 import com.rawlabs.protocol.das.v1.functions.FunctionDefinition
 import com.rawlabs.protocol.das.v1.tables.TableDefinition
-
-import scala.collection.mutable
 
 class DASDatabricks(options: Map[String, String]) extends DASSdk {
 

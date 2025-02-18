@@ -12,6 +12,9 @@
 
 package com.rawlabs.das.databricks
 
+import scala.annotation.tailrec
+import scala.jdk.CollectionConverters.CollectionHasAsScala
+
 import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.service.catalog.{ColumnInfo, ColumnTypeName, TableInfo}
 import com.databricks.sdk.service.sql._
@@ -23,9 +26,6 @@ import com.rawlabs.protocol.das.v1.tables.{ColumnDefinition, TableDefinition, Ta
 import com.rawlabs.protocol.das.v1.types._
 import com.typesafe.scalalogging.StrictLogging
 
-import scala.annotation.tailrec
-import scala.jdk.CollectionConverters.CollectionHasAsScala
-
 class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databricksTable: TableInfo)
     extends DASTable
     with StrictLogging {
@@ -34,8 +34,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
       quals: Seq[Qual],
       columns: Seq[String],
       sortKeys: Seq[SortKey],
-      maybeLimit: Option[Long]
-  ): Seq[String] = {
+      maybeLimit: Option[Long]): Seq[String] = {
     val (query, parameters) = buildQuery(quals, columns, sortKeys, maybeLimit)
     query.split("\n").toSeq ++ parameters.asScala.map(p => s"${p.getName} = ${p.getValue}")
   }
@@ -44,8 +43,7 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
       quals: Seq[Qual],
       columns: Seq[String],
       sortKeys: Seq[SortKey],
-      maybeLimit: Option[Long]
-  ): DASExecuteResult = {
+      maybeLimit: Option[Long]): DASExecuteResult = {
     val (query, parameters) = buildQuery(quals, columns, sortKeys, maybeLimit)
     val stmt = new ExecuteStatementRequest()
     stmt.setParameters(parameters)
@@ -63,40 +61,39 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
       s"SELECT ${databricksColumns.mkString(",")} FROM " + databricksTable.getSchemaName + '.' + databricksTable.getName
     val parameters = new java.util.LinkedList[StatementParameterListItem]
     if (quals.nonEmpty) {
-      val predicates = quals.zipWithIndex.map {
-        case (qual, idx) =>
-          if (qual.hasSimpleQual) {
-            val operator = databricksOperator(qual.getSimpleQual.getOperator)
-            val parameter = rawValueToParameter(qual.getSimpleQual.getValue)
-            val column = databricksColumnName(qual.getName)
-            val arg = "arg" + idx
-            parameter.setName(arg)
-            parameters.add(parameter)
-            s"$column $operator :$arg"
-          } else if (qual.hasIsAnyQual) {
-            val op = qual.getIsAnyQual.getOperator
-            val values = qual.getIsAnyQual.getValuesList.asScala.map(rawValueToDatabricksQueryString).map(v => s"($v)")
-            val column = databricksColumnName(qual.getName)
-            val valuesTable = databricksColumnName("vs_" + qual.getName)
-            val v = databricksColumnName("v_" + qual.getName)
-            val operator = databricksOperator(op)
-            // We generate an EXISTS clause: WHERE x > ANY (1,2,3) => WHERE EXISTS (SELECT * FROM VALUES (1),(2),(3) AS values(v) WHERE x > v)
-            val subquery =
-              s"SELECT * FROM VALUES ${values.mkString(",")} AS $valuesTable($v) WHERE $column $operator $v"
-            s"EXISTS ($subquery)"
-          } else if (qual.hasIsAllQual) {
-            val op = qual.getIsAnyQual.getOperator
-            val values = qual.getIsAnyQual.getValuesList.asScala.map(rawValueToDatabricksQueryString).map(v => s"($v)")
-            val column = databricksColumnName(qual.getName)
-            val valuesTable = databricksColumnName("vs_" + qual.getName)
-            val v = databricksColumnName("v_" + qual.getName)
-            val operator = databricksOperator(op)
-            // We use NOT EXIST with the NOT operation:
-            // WHERE x > ALL (1,2,3) => WHERE NOT EXISTS (SELECT * FROM VALUES (1),(2),(3) AS values(v) WHERE NOT x > v)
-            val subquery =
-              s"SELECT * FROM VALUES ${values.mkString(",")} AS $valuesTable($v) WHERE NOT $column $operator $v"
-            s"NOT EXISTS ($subquery)"
-          }
+      val predicates = quals.zipWithIndex.map { case (qual, idx) =>
+        if (qual.hasSimpleQual) {
+          val operator = databricksOperator(qual.getSimpleQual.getOperator)
+          val parameter = rawValueToParameter(qual.getSimpleQual.getValue)
+          val column = databricksColumnName(qual.getName)
+          val arg = "arg" + idx
+          parameter.setName(arg)
+          parameters.add(parameter)
+          s"$column $operator :$arg"
+        } else if (qual.hasIsAnyQual) {
+          val op = qual.getIsAnyQual.getOperator
+          val values = qual.getIsAnyQual.getValuesList.asScala.map(rawValueToDatabricksQueryString).map(v => s"($v)")
+          val column = databricksColumnName(qual.getName)
+          val valuesTable = databricksColumnName("vs_" + qual.getName)
+          val v = databricksColumnName("v_" + qual.getName)
+          val operator = databricksOperator(op)
+          // We generate an EXISTS clause: WHERE x > ANY (1,2,3) => WHERE EXISTS (SELECT * FROM VALUES (1),(2),(3) AS values(v) WHERE x > v)
+          val subquery =
+            s"SELECT * FROM VALUES ${values.mkString(",")} AS $valuesTable($v) WHERE $column $operator $v"
+          s"EXISTS ($subquery)"
+        } else if (qual.hasIsAllQual) {
+          val op = qual.getIsAnyQual.getOperator
+          val values = qual.getIsAnyQual.getValuesList.asScala.map(rawValueToDatabricksQueryString).map(v => s"($v)")
+          val column = databricksColumnName(qual.getName)
+          val valuesTable = databricksColumnName("vs_" + qual.getName)
+          val v = databricksColumnName("v_" + qual.getName)
+          val operator = databricksOperator(op)
+          // We use NOT EXIST with the NOT operation:
+          // WHERE x > ALL (1,2,3) => WHERE NOT EXISTS (SELECT * FROM VALUES (1),(2),(3) AS values(v) WHERE NOT x > v)
+          val subquery =
+            s"SELECT * FROM VALUES ${values.mkString(",")} AS $valuesTable($v) WHERE NOT $column $operator $v"
+          s"NOT EXISTS ($subquery)"
+        }
       }
       query += " WHERE " + predicates.mkString(" AND ")
     }
@@ -124,13 +121,13 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   private def databricksOperator(op: Operator): String = {
     {
       op match {
-        case Operator.EQUALS => "="
-        case Operator.GREATER_THAN => ">"
+        case Operator.EQUALS                => "="
+        case Operator.GREATER_THAN          => ">"
         case Operator.GREATER_THAN_OR_EQUAL => ">="
-        case Operator.LESS_THAN => "<"
-        case Operator.LESS_THAN_OR_EQUAL => "<="
-        case Operator.NOT_EQUALS => "<>"
-        case _ => throw new IllegalArgumentException(s"Unsupported operator: $op")
+        case Operator.LESS_THAN             => "<"
+        case Operator.LESS_THAN_OR_EQUAL    => "<="
+        case Operator.NOT_EQUALS            => "<>"
+        case _                              => throw new IllegalArgumentException(s"Unsupported operator: $op")
       }
     }
   }
@@ -161,18 +158,18 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
   val tableDefinition: TableDefinition = {
     val definition = TableDefinition.newBuilder().setTableId(TableId.newBuilder().setName(databricksTable.getName))
     if (databricksTable.getComment != null) definition.setDescription(databricksTable.getComment)
-    databricksTable.getColumns.asScala.foreach {
-      case databricksColumn => columnType(databricksColumn) match {
-          case Some(tipe) =>
-            val columnDef = ColumnDefinition.newBuilder()
-            columnDef.setName(databricksColumn.getName)
-            columnDef.setType(tipe)
-            if (databricksColumn.getComment != null) columnDef.setDescription(databricksColumn.getComment)
-            definition.addColumns(columnDef)
-          case None =>
-            // We ignore columns of unsupported types
-            logger.warn(s"Unsupported column type: ${databricksColumn.getTypeJson}")
-        }
+    databricksTable.getColumns.asScala.foreach { case databricksColumn =>
+      columnType(databricksColumn) match {
+        case Some(tipe) =>
+          val columnDef = ColumnDefinition.newBuilder()
+          columnDef.setName(databricksColumn.getName)
+          columnDef.setType(tipe)
+          if (databricksColumn.getComment != null) columnDef.setDescription(databricksColumn.getComment)
+          definition.addColumns(columnDef)
+        case None =>
+          // We ignore columns of unsupported types
+          logger.warn(s"Unsupported column type: ${databricksColumn.getTypeJson}")
+      }
     }
     definition.setStartupCost(STARTUP_COST)
     definition.build()
@@ -183,22 +180,20 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     val columnType = info.getTypeName
     val isNullable = info.getNullable
     columnType match {
-      case ColumnTypeName.BYTE => builder.setByte(ByteType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.SHORT => builder.setShort(ShortType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.INT => builder.setInt(IntType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.LONG => builder.setLong(LongType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.FLOAT => builder.setFloat(FloatType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.DOUBLE => builder.setDouble(DoubleType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.DECIMAL => builder.setDecimal(DecimalType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.STRING => builder.setString(StringType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.BOOLEAN => builder.setBool(BoolType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.DATE => builder.setDate(DateType.newBuilder().setNullable(isNullable))
-      case ColumnTypeName.TIMESTAMP => builder.setTimestamp(
-          TimestampType.newBuilder().setNullable(isNullable)
-        )
-      case ColumnTypeName.STRUCT => return None // TODO needs to extract the type info from JSON
-      case ColumnTypeName.ARRAY => return None // TODO needs to extract the type info from JSON
-      case _ => throw new IllegalArgumentException(s"Unsupported column type: $columnType")
+      case ColumnTypeName.BYTE      => builder.setByte(ByteType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.SHORT     => builder.setShort(ShortType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.INT       => builder.setInt(IntType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.LONG      => builder.setLong(LongType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.FLOAT     => builder.setFloat(FloatType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.DOUBLE    => builder.setDouble(DoubleType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.DECIMAL   => builder.setDecimal(DecimalType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.STRING    => builder.setString(StringType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.BOOLEAN   => builder.setBool(BoolType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.DATE      => builder.setDate(DateType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.TIMESTAMP => builder.setTimestamp(TimestampType.newBuilder().setNullable(isNullable))
+      case ColumnTypeName.STRUCT    => return None // TODO needs to extract the type info from JSON
+      case ColumnTypeName.ARRAY     => return None // TODO needs to extract the type info from JSON
+      case _                        => throw new IllegalArgumentException(s"Unsupported column type: $columnType")
     }
     Some(builder.build())
   }
