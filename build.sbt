@@ -43,18 +43,6 @@ lazy val buildSettings = Seq(
   )
 )
 
-lazy val chronicleFlags = Seq(
-  "--add-exports=java.base/jdk.internal.ref=ALL-UNNAMED",
-  "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED",
-  "--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED",
-  "--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
-  "--add-opens=jdk.compiler/com.sun.tools.javac=ALL-UNNAMED",
-  "--add-opens=java.base/java.lang=ALL-UNNAMED",
-  "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
-  "--add-opens=java.base/java.io=ALL-UNNAMED",
-  "--add-opens=java.base/java.util=ALL-UNNAMED"
-)
-
 lazy val compileSettings = Seq(
   Compile / doc / sources := Seq.empty,
   Compile / packageDoc / mappings := Seq(),
@@ -66,8 +54,7 @@ lazy val compileSettings = Seq(
   // Ensure Java annotations get compiled first, so that they are accessible from Scala.
   compileOrder := CompileOrder.JavaThenScala,
   // Ensure we fork new JVM for run, so we can set JVM flags.
-  Compile / run / fork := true,
-  Compile / run / javaOptions ++= chronicleFlags
+  Compile / run / fork := true
 )
 
 lazy val testSettings = Seq(
@@ -91,7 +78,6 @@ lazy val testSettings = Seq(
     "-XX:+HeapDumpOnOutOfMemoryError",
     s"-XX:HeapDumpPath=${Paths.get(sys.env.getOrElse("SBT_FORK_OUTPUT_DIR", "target/test-results")).resolve("heap-dumps")}"
   ),
-  Test / javaOptions ++= chronicleFlags,
   Test / publishArtifact := true
 )
 
@@ -117,8 +103,8 @@ lazy val root = (project in file("."))
     strictBuildSettings,
     publishSettings,
     libraryDependencies ++= Seq(
-      "com.raw-labs" %% "protocol-das" % "1.0.0-beta3" % "compile->compile;test->test",
-      "com.raw-labs" %% "das-server-scala" % "1.0.0-beta5" % "compile->compile;test->test",
+      "com.raw-labs" %% "protocol-das" % "1.0.0" % "compile->compile;test->test",
+      "com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test",
       "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
     )
   )
@@ -212,8 +198,7 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
         )
       case None => Seq(baseAlias)
     }
-  },
-  Universal / javaOptions ++= chronicleFlags.map("-J" + _)
+  }
 )
 
 lazy val docker = (project in file("docker"))
@@ -224,5 +209,5 @@ lazy val docker = (project in file("docker"))
   .settings(
     strictBuildSettings,
     dockerSettings,
-    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "1.0.0-beta5" % "compile->compile;test->test")
+    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test")
   )
