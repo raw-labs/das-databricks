@@ -33,13 +33,3 @@ You can find the image id by looking at the sbt output or by running:
 ```bash
 $ docker images
 ```
-
-# To publish the server as a docker image
-```
-sbt docker/Docker/publishLocal
-```
-
-# To run locally
-```
-sbt docker/run
-```
