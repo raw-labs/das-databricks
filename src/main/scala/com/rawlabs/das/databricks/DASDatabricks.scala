@@ -12,14 +12,15 @@
 
 package com.rawlabs.das.databricks
 
+import scala.collection.mutable
+
 import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.core.DatabricksConfig
 import com.databricks.sdk.service.catalog.ListTablesRequest
 import com.databricks.sdk.service.sql.ListWarehousesRequest
-import com.rawlabs.das.sdk.{DASFunction, DASSdk, DASTable}
-import com.rawlabs.protocol.das.{FunctionDefinition, TableDefinition}
-
-import scala.collection.mutable
+import com.rawlabs.das.sdk.scala.{DASFunction, DASSdk, DASTable}
+import com.rawlabs.protocol.das.v1.functions.FunctionDefinition
+import com.rawlabs.protocol.das.v1.tables.TableDefinition
 
 class DASDatabricks(options: Map[String, String]) extends DASSdk {
 
@@ -46,11 +47,11 @@ class DASDatabricks(options: Map[String, String]) extends DASSdk {
     tables.toMap
   }
 
-  override def tableDefinitions: Seq[TableDefinition] = tables.values.map(_.tableDefinition).toList
-
-  override def functionDefinitions: Seq[FunctionDefinition] = Seq.empty
-
   override def getTable(name: String): Option[DASTable] = tables.get(name)
 
   override def getFunction(name: String): Option[DASFunction] = None
+
+  override def tableDefinitions: Seq[TableDefinition] = tables.map(_._2.tableDefinition).toSeq
+
+  override def functionDefinitions: Seq[FunctionDefinition] = Seq.empty
 }

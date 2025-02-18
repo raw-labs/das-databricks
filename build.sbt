@@ -24,7 +24,7 @@ lazy val commonSettings = Seq(
 )
 
 lazy val buildSettings = Seq(
-  scalaVersion := "2.12.18",
+  scalaVersion := "2.13.16",
   javacOptions ++= Seq(
     "-source",
     "21",
@@ -34,10 +34,6 @@ lazy val buildSettings = Seq(
   scalacOptions ++= Seq(
     "-feature",
     "-unchecked",
-    // When compiling in encrypted drives in Linux, the max size of a name is reduced to around 140
-    // https://unix.stackexchange.com/a/32834
-    "-Xmax-classfile-name",
-    "140",
     "-deprecation",
     "-Xlint:-stars-align,_",
     "-Ywarn-dead-code",
@@ -105,7 +101,8 @@ lazy val root = (project in file("."))
     strictBuildSettings,
     publishSettings,
     libraryDependencies ++= Seq(
-      "com.raw-labs" %% "das-sdk-scala" % "0.1.4" % "compile->compile;test->test",
+      "com.raw-labs" %% "protocol-das" % "1.0.0" % "compile->compile;test->test",
+      "com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test",
       "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
     )
   )
@@ -183,7 +180,7 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
     }
     case lm @ _ => lm
   },
-  Compile / mainClass := Some("com.rawlabs.das.server.DASServerMain"),
+  Compile / mainClass := Some("com.rawlabs.das.server.DASServer"),
   Docker / dockerAutoremoveMultiStageIntermediateImages := false,
   dockerAlias := dockerAlias.value.withTag(Option(version.value.replace("+", "-"))),
   dockerAliases := {
@@ -209,5 +206,5 @@ lazy val docker = (project in file("docker"))
   .settings(
     strictBuildSettings,
     dockerSettings,
-    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.2.0" % "compile->compile;test->test")
+    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test")
   )
