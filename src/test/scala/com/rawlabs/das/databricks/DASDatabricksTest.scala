@@ -16,6 +16,7 @@ import scala.jdk.CollectionConverters._
 
 import org.scalatest.funsuite.AnyFunSuite
 
+import com.databricks.sdk.core.DatabricksException
 import com.rawlabs.protocol.das.v1.query.{Operator, Qual, SimpleQual}
 import com.rawlabs.protocol.das.v1.tables.{Row => ProtoRow}
 import com.rawlabs.protocol.das.v1.types.{Value, ValueString}
@@ -39,14 +40,23 @@ class DASDatabricksTest extends AnyFunSuite with StrictLogging {
   // 1) Registration
   // --------------------------------------------------------------------------
 
-  test("Should register Databricks") {
+  test("Should successfully register Databricks with valid options") {
     new DASDatabricks(options)
   }
 
   test("Should fail to register Databricks with missing options") {
     val missingOptions = options - "host"
+    // FIXME (msb): This doesn't seem to be the correct exception
     assertThrows[IllegalArgumentException] {
       new DASDatabricks(missingOptions)
+    }
+  }
+
+  test("Should fail to register Databricks with invalid options") {
+    val invalidOptions = options + ("host" -> "invalid")
+    // FIXME (msb): This doesn't seem to be the correct exception
+    assertThrows[DatabricksException] {
+      new DASDatabricks(invalidOptions)
     }
   }
 
