@@ -133,6 +133,18 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
   dockerCommands ++= Seq(
     Cmd(
       "RUN",
+      "apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && apt-get clean && rm -rf /var/lib/apt/lists/*"
+    ),
+    Cmd(
+      "RUN",
+      "chmod +x /opt/docker/bin/healthcheck.sh"
+    ),
+    Cmd(
+      "HEALTHCHECK",
+      "--interval=30s --timeout=10s --start-period=60s --retries=3 CMD [\"/opt/docker/bin/healthcheck.sh\"]"
+    ),
+    Cmd(
+      "RUN",
       s"""set -eux \\
       && apt-get update \\
       && apt-get install -y --no-install-recommends \\
@@ -195,7 +207,11 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
         )
       case None => Seq(baseAlias)
     }
-  }
+  },
+  // Add these mappings to include the healthcheck script in the Docker image
+  Universal / mappings ++= Seq(
+    file("src/main/resources/healthcheck.sh") -> "bin/healthcheck.sh"
+  )
 )
 
 lazy val docker = (project in file("docker"))

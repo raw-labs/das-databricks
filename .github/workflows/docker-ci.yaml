@@ -5,13 +5,57 @@ on:
       - .github/workflows/docker-ci.yaml
       - .github/scripts/**
       - build.sbt
+      - src/**
 
 env:
   GITHUB_TOKEN: ${{ secrets.READ_PACKAGES }}
+  IMAGE_NAME: das-databricks-server
 
 jobs:
-  build:
+  build-and-test:
+    name: Build, Scan & Test
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - run: .github/scripts/dnd-sbt docker/Docker/publishLocal
+
+      # Build image using SBT
+      - name: Build Docker image
+        run: |
+          .github/scripts/dnd-sbt docker/Docker/publishLocal
+          DOCKER_TAG=$(echo '${{ github.head_ref || github.ref_name }}' | sed 's/[^a-zA-Z0-9_.-]/-/g')
+          echo "VERSION=${DOCKER_TAG}" >> $GITHUB_ENV
+          echo "IMAGE=ghcr.io/raw-labs/das-databricks:${DOCKER_TAG}" >> $GITHUB_ENV
+
+      # Scan image with Trivy
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # Test container starts properly
+      - name: Test image - run container
+        run: |
+          CONTAINER_ID=$(docker run -d -p 50051 ${IMAGE})
+          echo "CONTAINER_ID=${CONTAINER_ID}" >> $GITHUB_ENV
+          sleep 15
+
+      - name: Test image - verify service is running
+        run: |
+          docker exec ${CONTAINER_ID} /opt/docker/bin/healthcheck.sh
+          if [ $? -ne 0 ]; then
+            echo "Service check failed!"
+            exit 1
+          fi
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          if [ ! -z "${CONTAINER_ID}" ]; then
+            docker stop ${CONTAINER_ID}
+            docker rm ${CONTAINER_ID}
+          fi
