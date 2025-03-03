@@ -89,7 +89,7 @@ lazy val root = (project in file("."))
       "com.raw-labs" %% "protocol-das" % "1.0.0" % "compile->compile;test->test",
       "com.raw-labs" %% "das-server-scala" % "0.4.1" % "compile->compile;test->test",
       // Databricks
-      "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"))
+      "com.databricks" % "databricks-sdk-java" % "0.41.0" % "compile->compile"))
 
 val amzn_jdk_version = "21.0.4.7-1"
 val amzn_corretto_bin = s"java-21-amazon-corretto-jdk_${amzn_jdk_version}_amd64.deb"
