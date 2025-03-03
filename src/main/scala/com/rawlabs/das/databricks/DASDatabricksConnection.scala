@@ -55,24 +55,26 @@ class DASDatabricksConnection(options: Map[String, String]) extends StrictLoggin
 
   def execute(stmt: ExecuteStatementRequest): DASDatabricksExecuteResult = {
     val executeAPI = databricksClient.statementExecution()
-    val response1 = executeAPI.executeStatement(stmt)
-    val response = getResult(response1)
+    val response0 = executeAPI.executeStatement(stmt)
+    val response = getResult(response0)
     new DASDatabricksExecuteResult(executeAPI, response)
   }
 
   private val POLLING_TIME = 1000
 
+  /* Loops until the query is finished */
   @tailrec
   private def getResult(response: StatementResponse): StatementResponse = {
     val state = response.getStatus.getState
     state match {
       case StatementState.PENDING | StatementState.RUNNING =>
         Thread.sleep(POLLING_TIME)
-        val response2 = databricksClient.statementExecution().getStatement(response.getStatementId)
-        getResult(response2)
+        val newResponse = databricksClient.statementExecution().getStatement(response.getStatementId)
+        getResult(newResponse)
       case StatementState.SUCCEEDED => response
-      case StatementState.FAILED =>
-        throw new RuntimeException(s"Query failed: ${response.getStatus.getError.getMessage}")
+      case StatementState.FAILED    =>
+        // All kinds of errors (e.g. syntax error, permission error) are thrown as BAD_REQUEST and we can't distinguish them.
+        throw new DASSdkInvalidArgumentException(s"Query failed: ${response.getStatus.getError.getMessage}")
       case StatementState.CLOSED =>
         throw new RuntimeException(s"Query closed: ${response.getStatus.getError.getMessage}")
       case StatementState.CANCELED =>
@@ -112,6 +114,7 @@ class DASDatabricksConnection(options: Map[String, String]) extends StrictLoggin
       block
     } catch {
       case t: Throwable =>
+        logger.warn("Databricks API error", t)
         throw mapDatabricksException(t).getOrElse(t)
     }
   }
