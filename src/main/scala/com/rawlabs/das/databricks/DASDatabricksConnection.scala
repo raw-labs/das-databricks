@@ -31,14 +31,14 @@ import com.typesafe.scalalogging.StrictLogging
 
 class DASDatabricksConnection(options: Map[String, String]) extends StrictLogging {
 
-  private val host: String = options.getOrElse("host", throw new DASSdkInvalidArgumentException("Host is required"))
-  private val token: String = options.getOrElse("token", throw new DASSdkInvalidArgumentException("Token is required"))
+  private val host: String = options.getOrElse("host", throw new DASSdkInvalidArgumentException("host is required"))
+  private val token: String = options.getOrElse("token", throw new DASSdkInvalidArgumentException("token is required"))
   private val catalog: String =
-    options.getOrElse("catalog", throw new DASSdkInvalidArgumentException("Catalog is required"))
+    options.getOrElse("catalog", throw new DASSdkInvalidArgumentException("catalog is required"))
   private val schema: String =
-    options.getOrElse("schema", throw new DASSdkInvalidArgumentException("Schema is required"))
+    options.getOrElse("schema", throw new DASSdkInvalidArgumentException("schema is required"))
   private val warehouse: String =
-    options.getOrElse("warehouse", throw new DASSdkInvalidArgumentException("Warehouse ID is required"))
+    options.getOrElse("warehouse", throw new DASSdkInvalidArgumentException("warehouse ID is required"))
   private val config = new DatabricksConfig().setHost(host).setToken(token)
   private val databricksClient = new WorkspaceClient(config)
 
