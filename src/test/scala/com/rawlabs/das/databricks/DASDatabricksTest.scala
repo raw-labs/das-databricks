@@ -13,10 +13,8 @@
 package com.rawlabs.das.databricks
 
 import scala.jdk.CollectionConverters._
-
 import org.scalatest.funsuite.AnyFunSuite
-
-import com.databricks.sdk.core.DatabricksException
+import com.rawlabs.das.sdk.{DASSdkInvalidArgumentException, DASSdkUnauthenticatedException}
 import com.rawlabs.protocol.das.v1.query.{Operator, Qual, SimpleQual}
 import com.rawlabs.protocol.das.v1.tables.{Row => ProtoRow}
 import com.rawlabs.protocol.das.v1.types.{Value, ValueString}
@@ -46,16 +44,42 @@ class DASDatabricksTest extends AnyFunSuite with StrictLogging {
 
   test("Should fail to register Databricks with missing options") {
     val missingOptions = options - "host"
-    // FIXME (msb): This doesn't seem to be the correct exception
-    assertThrows[IllegalArgumentException] {
+    assertThrows[DASSdkInvalidArgumentException] {
       new DASDatabricks(missingOptions)
     }
   }
 
-  test("Should fail to register Databricks with invalid options") {
+  test("Should fail to register Databricks with an invalid host option") {
     val invalidOptions = options + ("host" -> "invalid")
-    // FIXME (msb): This doesn't seem to be the correct exception
-    assertThrows[DatabricksException] {
+    assertThrows[DASSdkInvalidArgumentException] {
+      new DASDatabricks(invalidOptions)
+    }
+  }
+
+  test("Should fail to register Databricks with an invalid catalog option") {
+    val invalidOptions = options + ("catalog" -> "invalid")
+    assertThrows[DASSdkInvalidArgumentException] {
+      new DASDatabricks(invalidOptions)
+    }
+  }
+
+  test("Should fail to register Databricks with an invalid schema option") {
+    val invalidOptions = options + ("schema" -> "invalid")
+    assertThrows[DASSdkInvalidArgumentException] {
+      new DASDatabricks(invalidOptions)
+    }
+  }
+
+  test("Should fail to register Databricks with an invalid warehouse option") {
+    val invalidOptions = options + ("warehouse" -> "invalid")
+    assertThrows[DASSdkInvalidArgumentException] {
+      new DASDatabricks(invalidOptions)
+    }
+  }
+
+  test("Should fail to register Databricks with an invalid token option") {
+    val invalidOptions = options + ("token" -> "invalid")
+    assertThrows[DASSdkUnauthenticatedException] {
       new DASDatabricks(invalidOptions)
     }
   }

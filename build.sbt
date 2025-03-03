@@ -87,7 +87,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       // DAS
       "com.raw-labs" %% "protocol-das" % "1.0.0" % "compile->compile;test->test",
-      "com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test",
+      "com.raw-labs" %% "das-server-scala" % "0.4.1" % "compile->compile;test->test",
       // Databricks
       "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"))
 
