@@ -18,15 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Build image using SBT
       - name: Build Docker image
         run: |
           .github/scripts/dnd-sbt docker/Docker/publishLocal
           DOCKER_TAG=$(echo '${{ github.head_ref || github.ref_name }}' | sed 's/[^a-zA-Z0-9_.-]/-/g')
           echo "VERSION=${DOCKER_TAG}" >> $GITHUB_ENV
-          echo "IMAGE=ghcr.io/raw-labs/das-databricks:${DOCKER_TAG}" >> $GITHUB_ENV
+          echo "IMAGE=ghcr.io/raw-labs/${IMAGE_NAME}:${DOCKER_TAG}" >> $GITHUB_ENV
 
-      # Scan image with Trivy
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -37,7 +35,6 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      # Test container starts properly
       - name: Test image - run container
         run: |
           CONTAINER_ID=$(docker run -d -p 50051 ${IMAGE})

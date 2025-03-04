@@ -1,4 +1,4 @@
-import com.typesafe.sbt.packager.docker.{Cmd, LayeredMapping}
+import com.typesafe.sbt.packager.docker.{Cmd, ExecCmd, LayeredMapping}
 import sbt.Keys._
 import sbt._
 
@@ -96,6 +96,7 @@ lazy val strictBuildSettings = commonSettings ++ compileSettings ++ buildSetting
 )
 
 lazy val root = (project in file("."))
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(
     name := "das-databricks",
     strictBuildSettings,
@@ -104,96 +105,90 @@ lazy val root = (project in file("."))
       "com.raw-labs" %% "protocol-das" % "1.0.0" % "compile->compile;test->test",
       "com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test",
       "com.databricks" % "databricks-sdk-java" % "0.31.1" % "compile->compile"
-    )
+    ),
+    // Apply Docker settings
+    dockerSettings,
+    Compile / mainClass := Some("com.rawlabs.das.server.DASServer")
   )
 
-val amzn_jdk_version = "21.0.4.7-1"
-val amzn_corretto_bin = s"java-21-amazon-corretto-jdk_${amzn_jdk_version}_amd64.deb"
-val amzn_corretto_bin_dl_url = s"https://corretto.aws/downloads/resources/${amzn_jdk_version.replace('-', '.')}"
-
-lazy val dockerSettings = strictBuildSettings ++ Seq(
+lazy val dockerSettings = Seq(
   name := "das-databricks-server",
-  dockerBaseImage := s"--platform=amd64 debian:bookworm-slim",
+
+  dockerBaseImage := "eclipse-temurin:21-jre",
+
   dockerLabels ++= Map(
     "vendor" -> "RAW Labs SA",
     "product" -> "das-databricks-server",
     "image-type" -> "final",
     "org.opencontainers.image.source" -> "https://github.com/raw-labs/das-databricks"
   ),
+
   Docker / daemonUser := "raw",
+  Docker / daemonUserUid := Some("1001"),
+  Docker / daemonGroup := "raw",
+  Docker / daemonGroupGid := Some("1001"),
+
   dockerExposedVolumes := Seq("/var/log/raw"),
   dockerExposedPorts := Seq(50051),
-  dockerEnvVars := Map("PATH" -> s"${(Docker / defaultLinuxInstallLocation).value}/bin:$$PATH"),
-  // We remove the automatic switch to USER 1001:0.
-  // We we want to run as root to install the JDK, also later we will switch to a non-root user.
-  dockerCommands := dockerCommands.value.filterNot {
-    case Cmd("USER", args @ _*) => args.contains("1001:0")
-    case cmd => false
-  },
-  dockerCommands ++= Seq(
-    Cmd(
-      "RUN",
-      "apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && apt-get clean && rm -rf /var/lib/apt/lists/*"
-    ),
-    Cmd(
-      "RUN",
-      "chmod +x /opt/docker/bin/healthcheck.sh"
-    ),
-    Cmd(
-      "HEALTHCHECK",
-      "--interval=30s --timeout=10s --start-period=60s --retries=3 CMD [\"/opt/docker/bin/healthcheck.sh\"]"
-    ),
-    Cmd(
-      "RUN",
-      s"""set -eux \\
-      && apt-get update \\
-      && apt-get install -y --no-install-recommends \\
-        curl wget ca-certificates gnupg software-properties-common fontconfig java-common \\
-      && wget $amzn_corretto_bin_dl_url/$amzn_corretto_bin \\
-      && dpkg --install $amzn_corretto_bin \\
-      && rm -f $amzn_corretto_bin \\
-      && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \\
-          wget gnupg software-properties-common"""
-    ),
-    Cmd(
-      "USER",
-      "raw"
-    )
+
+  dockerEnvVars ++= Map(
+    "LANG" -> "C.UTF-8"
   ),
-  dockerEnvVars += "LANG" -> "C.UTF-8",
-  dockerEnvVars += "JAVA_HOME" -> "/usr/lib/jvm/java-21-amazon-corretto",
-  Compile / doc / sources := Seq.empty, // Do not generate scaladocs
-  // Skip docs to speed up build
-  Compile / packageDoc / mappings := Seq(),
-  updateOptions := updateOptions.value.withLatestSnapshots(true),
-  Linux / linuxPackageMappings += packageTemplateMapping(s"/var/lib/${packageName.value}")(),
-  bashScriptDefines := {
-    val ClasspathPattern = "declare -r app_classpath=\"(.*)\"\n".r
-    bashScriptDefines.value.map {
-      case ClasspathPattern(classpath) => s"""
-        |declare -r app_classpath="$${app_home}/../conf:$classpath"
-        |""".stripMargin
-      case _ @entry => entry
+
+  dockerCommands := {
+    val setupCommands = Seq(
+      Cmd("RUN", Seq(
+        "apt-get update",
+        "apt-get install -y --no-install-recommends netcat-openbsd",
+        "apt-get clean",
+        "rm -rf /var/lib/apt/lists/*",
+        "mkdir -p /var/log/raw"
+      ).mkString(" && \\\n"))
+    )
+
+    // Add healthcheck command (will be after USER command)
+    val healthcheckCommand = Seq(
+      Cmd("HEALTHCHECK", "--interval=30s", "--timeout=10s", "--start-period=60s", "--retries=3",
+          "CMD", "[", "\"/opt/docker/bin/healthcheck.sh\"", "]")
+    )
+
+    // Get the default commands from sbt-native-packager
+    val defaultCommands = dockerCommands.value
+
+    // Find the position after FROM for the main stage
+    val fromCommandPos = defaultCommands.indexWhere {
+      case Cmd("FROM", args @ _*) if args.headOption.contains("eclipse-temurin:21-jre") && !args.contains("stage0") => true
+      case _ => false
     }
+
+    // Insert our setup commands after the FROM command and add healthcheck at the end
+    val (before, after) = defaultCommands.splitAt(fromCommandPos + 1)
+    before ++ setupCommands ++ after ++ healthcheckCommand
   },
+
+  // Include healthcheck script
+  Universal / mappings ++= Seq(
+    file("src/main/resources/healthcheck.sh") -> "bin/healthcheck.sh"
+  ),
+
+  // Layer configuration
   Docker / dockerLayerMappings := (Docker / dockerLayerMappings).value.map {
     case lm @ LayeredMapping(Some(1), file, path) => {
       val fileName = java.nio.file.Paths.get(path).getFileName.toString
       if (!fileName.endsWith(".jar")) {
-        // If it is not a jar, put it on the top layer. Configuration files and other small files.
+        // Config files in top layer
         LayeredMapping(Some(2), file, path)
       } else if (fileName.startsWith("com.raw-labs") && fileName.endsWith(".jar")) {
-        // If it is one of our jars, also top layer. These will change often.
+        // Our jars in top layer
         LayeredMapping(Some(2), file, path)
       } else {
-        // Otherwise it is a 3rd party library, which only changes when we change dependencies, so leave it in layer 1
+        // 3rd party libs in base layer
         lm
       }
     }
     case lm @ _ => lm
   },
-  Compile / mainClass := Some("com.rawlabs.das.server.DASServer"),
-  Docker / dockerAutoremoveMultiStageIntermediateImages := false,
+
   dockerAlias := dockerAlias.value.withTag(Option(version.value.replace("+", "-"))),
   dockerAliases := {
     val devRegistry = sys.env.getOrElse("DEV_REGISTRY", "ghcr.io/raw-labs/das-databricks")
@@ -207,20 +202,5 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
         )
       case None => Seq(baseAlias)
     }
-  },
-  // Add these mappings to include the healthcheck script in the Docker image
-  Universal / mappings ++= Seq(
-    file("src/main/resources/healthcheck.sh") -> "bin/healthcheck.sh"
-  )
+  }
 )
-
-lazy val docker = (project in file("docker"))
-  .dependsOn(
-    root % "compile->compile;test->test"
-  )
-  .enablePlugins(JavaAppPackaging, DockerPlugin)
-  .settings(
-    strictBuildSettings,
-    dockerSettings,
-    libraryDependencies ++= Seq("com.raw-labs" %% "das-server-scala" % "0.3.0" % "compile->compile;test->test")
-  )
