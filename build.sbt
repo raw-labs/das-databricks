@@ -94,7 +94,8 @@ lazy val root = (project in file("."))
       // Databricks
       "com.databricks" % "databricks-sdk-java" % "0.41.0" % "compile->compile"),
     dependencyOverrides ++= Seq(
-      "io.netty" % "netty-handler" % "4.1.118.Final"
+      "io.netty" % "netty-handler" % "4.1.118.Final",
+      "com.google.protobuf" % "protobuf-java" % "3.25.5"
     ),
       dockerSettings
     )
