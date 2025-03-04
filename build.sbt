@@ -100,7 +100,7 @@ val amzn_corretto_bin_dl_url = s"https://corretto.aws/downloads/resources/${amzn
 
 lazy val dockerSettings = strictBuildSettings ++ Seq(
   Docker/ packageName := "das-databricks-server",
-  dockerBaseImage := s"--platform=amd64 debian:bookworm-slim",
+  dockerBaseImage := "eclipse-temurin:21-jre",
   dockerLabels ++= Map(
     "vendor" -> "RAW Labs SA",
     "product" -> "das-databricks-server",
