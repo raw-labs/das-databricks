@@ -109,14 +109,43 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
   dockerExposedVolumes := Seq("/var/log/raw"),
   dockerExposedPorts := Seq(50051),
   dockerEnvVars := Map("PATH" -> s"${(Docker / defaultLinuxInstallLocation).value}/bin:$$PATH"),
-  // We remove the automatic switch to USER 1001:0.
-  // We we want to run as root to install the JDK, also later we will switch to a non-root user.
-  dockerCommands := dockerCommands.value.filterNot {
-    case Cmd("USER", args @ _*) => args.contains("1001:0")
-    case cmd                    => false
+
+  /** We gather original sequence from the plugin
+   *  insert build stage,
+   *  remove USER 1001:1001 from the original sequence
+   *  and continue */
+  dockerCommands := {
+    val original = dockerCommands.value
+
+    val builderStage = Seq(
+      Cmd("FROM", "alpine:3.18", "AS", "grpc-health-builder"),
+      Cmd("ARG", "TARGETARCH"),
+      Cmd("RUN", "apk", "--no-cache", "add", "curl"),
+      Cmd("RUN",
+        "curl", "-fLo", "/grpc_health_probe",
+        "https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.15/grpc_health_probe-linux-$TARGETARCH",
+        "&&", "chmod", "+x", "/grpc_health_probe"
+      ),
+    )
+    val filtered = original.filterNot {
+      case Cmd("USER", args @ _*) => args.contains("1001:1001")
+      case _                      => false
+    }
+    builderStage ++ filtered
   },
   dockerCommands ++= Seq(
-    Cmd("USER", "raw")),
+    Cmd("COPY", "--from=grpc-health-builder", "/grpc_health_probe", "/usr/local/bin/grpc_health_probe"),
+    Cmd("USER", "raw"),
+    Cmd("HEALTHCHECK",
+      "--interval=30s",
+      "--timeout=5s",
+      "--retries=3",
+      "CMD",
+      "/usr/local/bin/grpc_health_probe",
+      "-addr=127.0.0.1:50051",
+      "-rpc-name=com.rawlabs.protocol.das.v1.services.HealthCheckService/Check"
+    )
+  ),
   dockerEnvVars += "LANG" -> "C.UTF-8",
   Compile / doc / sources := Seq.empty, // Do not generate scaladocs
   // Skip docs to speed up build
