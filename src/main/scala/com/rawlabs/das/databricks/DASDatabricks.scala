@@ -14,35 +14,21 @@ package com.rawlabs.das.databricks
 
 import scala.collection.mutable
 
-import com.databricks.sdk.WorkspaceClient
-import com.databricks.sdk.core.DatabricksConfig
-import com.databricks.sdk.service.catalog.ListTablesRequest
-import com.databricks.sdk.service.sql.ListWarehousesRequest
 import com.rawlabs.das.sdk.scala.{DASFunction, DASSdk, DASTable}
 import com.rawlabs.protocol.das.v1.functions.FunctionDefinition
 import com.rawlabs.protocol.das.v1.tables.TableDefinition
+import com.typesafe.scalalogging.StrictLogging
 
-class DASDatabricks(options: Map[String, String]) extends DASSdk {
+class DASDatabricks(options: Map[String, String]) extends DASSdk with StrictLogging {
 
-  private val host: String = options.getOrElse("host", throw new IllegalArgumentException("Host is required"))
-  private val token: String = options.getOrElse("token", throw new IllegalArgumentException("Token is required"))
-  private val catalog: String = options.getOrElse("catalog", throw new IllegalArgumentException("Catalog is required"))
-  private val schema: String = options.getOrElse("schema", throw new IllegalArgumentException("Schema is required"))
-  private val warehouse: String =
-    options.getOrElse("warehouse", throw new IllegalArgumentException("Warehouse ID is required"))
-  private val config = new DatabricksConfig().setHost(host).setToken(token)
-  private val databricksClient = new WorkspaceClient(config)
-
+  private val databricksClient = new DASDatabricksConnection(options)
   private val tables = fetchTables()
 
-  databricksClient.warehouses().list(new ListWarehousesRequest()).forEach(println)
-
   private def fetchTables(): Map[String, DASDatabricksTable] = {
-    val req = new ListTablesRequest().setCatalogName(catalog).setSchemaName(schema)
-    val databricksTables = databricksClient.tables().list(req)
+    val databricksTables = databricksClient.dasTables()
     val tables = mutable.Map.empty[String, DASDatabricksTable]
-    databricksTables.forEach { databricksTable =>
-      tables.put(databricksTable.getName, new DASDatabricksTable(databricksClient, warehouse, databricksTable))
+    databricksTables.foreach { databricksTable =>
+      tables.put(databricksTable.tableDefinition.getTableId.getName, databricksTable)
     }
     tables.toMap
   }

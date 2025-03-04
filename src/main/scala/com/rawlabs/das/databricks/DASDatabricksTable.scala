@@ -12,10 +12,8 @@
 
 package com.rawlabs.das.databricks
 
-import scala.annotation.tailrec
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
-import com.databricks.sdk.WorkspaceClient
 import com.databricks.sdk.service.catalog.{ColumnInfo, ColumnTypeName, TableInfo}
 import com.databricks.sdk.service.sql._
 import com.rawlabs.das.sdk.DASExecuteResult
@@ -26,7 +24,7 @@ import com.rawlabs.protocol.das.v1.tables.{ColumnDefinition, TableDefinition, Ta
 import com.rawlabs.protocol.das.v1.types._
 import com.typesafe.scalalogging.StrictLogging
 
-class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databricksTable: TableInfo)
+class DASDatabricksTable(client: DASDatabricksConnection, warehouseID: String, databricksTable: TableInfo)
     extends DASTable
     with StrictLogging {
 
@@ -47,12 +45,8 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     val (query, parameters) = buildQuery(quals, columns, sortKeys, maybeLimit)
     val stmt = new ExecuteStatementRequest()
     stmt.setParameters(parameters)
-
     stmt.setStatement(query).setWarehouseId(warehouseID).setDisposition(Disposition.INLINE).setFormat(Format.JSON_ARRAY)
-    val executeAPI = client.statementExecution()
-    val response1 = executeAPI.executeStatement(stmt)
-    val response = getResult(response1)
-    new DASDatabricksExecuteResult(executeAPI, response)
+    client.execute(stmt)
   }
 
   private def buildQuery(quals: Seq[Qual], columns: Seq[String], sortKeys: Seq[SortKey], maybeLimit: Option[Long]) = {
@@ -132,28 +126,8 @@ class DASDatabricksTable(client: WorkspaceClient, warehouseID: String, databrick
     }
   }
 
-  @tailrec
-  private def getResult(response: StatementResponse): StatementResponse = {
-    val state = response.getStatus.getState
-    logger.info(s"Query ${response.getStatementId} state: $state")
-    state match {
-      case StatementState.PENDING | StatementState.RUNNING =>
-        Thread.sleep(POLLING_TIME)
-        val response2 = client.statementExecution().getStatement(response.getStatementId)
-        getResult(response2)
-      case StatementState.SUCCEEDED => response
-      case StatementState.FAILED =>
-        throw new RuntimeException(s"Query failed: ${response.getStatus.getError.getMessage}")
-      case StatementState.CLOSED =>
-        throw new RuntimeException(s"Query closed: ${response.getStatus.getError.getMessage}")
-      case StatementState.CANCELED =>
-        throw new RuntimeException(s"Query canceled: ${response.getStatus.getError.getMessage}")
-    }
-  }
-
   private val STARTUP_COST = 3000
   private val REL_SIZE = TableEstimate(100, 100)
-  private val POLLING_TIME = 1000
 
   val tableDefinition: TableDefinition = {
     val definition = TableDefinition.newBuilder().setTableId(TableId.newBuilder().setName(databricksTable.getName))
