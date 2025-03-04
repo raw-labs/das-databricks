@@ -36,7 +36,7 @@ jobs:
         password: ${{ secrets.WRITE_PACKAGES }}
         logout: false
     - name: publish docker images
-      run: .github/scripts/dnd-sbt docker/Docker/publish
+      run: .github/scripts/dnd-sbt Docker/publish
     - name: set should_trigger_deploy
       id: should_trigger_deploy
       shell: bash
