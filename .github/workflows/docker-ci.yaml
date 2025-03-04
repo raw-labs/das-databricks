@@ -14,4 +14,4 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - run: .github/scripts/dnd-sbt docker/Docker/publishLocal
+      - run: .github/scripts/dnd-sbt Docker/publishLocal

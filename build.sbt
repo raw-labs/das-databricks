@@ -80,6 +80,7 @@ lazy val strictBuildSettings =
   commonSettings ++ compileSettings ++ buildSettings ++ testSettings ++ Seq(scalacOptions ++= Seq("-Xfatal-warnings"))
 
 lazy val root = (project in file("."))
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(
     name := "das-databricks",
     strictBuildSettings,
@@ -89,14 +90,16 @@ lazy val root = (project in file("."))
       "com.raw-labs" %% "protocol-das" % "1.0.0" % "compile->compile;test->test",
       "com.raw-labs" %% "das-server-scala" % "0.4.1" % "compile->compile;test->test",
       // Databricks
-      "com.databricks" % "databricks-sdk-java" % "0.41.0" % "compile->compile"))
+      "com.databricks" % "databricks-sdk-java" % "0.41.0" % "compile->compile"),
+      dockerSettings
+    )
 
 val amzn_jdk_version = "21.0.4.7-1"
 val amzn_corretto_bin = s"java-21-amazon-corretto-jdk_${amzn_jdk_version}_amd64.deb"
 val amzn_corretto_bin_dl_url = s"https://corretto.aws/downloads/resources/${amzn_jdk_version.replace('-', '.')}"
 
 lazy val dockerSettings = strictBuildSettings ++ Seq(
-  name := "das-databricks-server",
+  Docker/ packageName := "das-databricks-server",
   dockerBaseImage := s"--platform=amd64 debian:bookworm-slim",
   dockerLabels ++= Map(
     "vendor" -> "RAW Labs SA",
@@ -159,7 +162,6 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
     case lm @ _ => lm
   },
   Compile / mainClass := Some("com.rawlabs.das.server.DASServer"),
-  Docker / dockerAutoremoveMultiStageIntermediateImages := false,
   dockerAlias := dockerAlias.value.withTag(Option(version.value.replace("+", "-"))),
   dockerAliases := {
     val devRegistry = sys.env.getOrElse("DEV_REGISTRY", "ghcr.io/raw-labs/das-databricks")
@@ -171,11 +173,3 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
       case None             => Seq(baseAlias)
     }
   })
-
-lazy val docker = (project in file("docker"))
-  .dependsOn(root % "compile->compile;test->test")
-  .enablePlugins(JavaAppPackaging, DockerPlugin)
-  .settings(
-    strictBuildSettings,
-    dockerSettings
-  )
