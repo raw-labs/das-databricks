@@ -20,7 +20,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          .github/scripts/dnd-sbt docker/Docker/publishLocal
+          .github/scripts/dnd-sbt Docker/publishLocal
           DOCKER_TAG=$(echo '${{ github.head_ref || github.ref_name }}' | sed 's/[^a-zA-Z0-9_.-]/-/g')
           echo "VERSION=${DOCKER_TAG}" >> $GITHUB_ENV
           echo "IMAGE=ghcr.io/raw-labs/${IMAGE_NAME}:${DOCKER_TAG}" >> $GITHUB_ENV
