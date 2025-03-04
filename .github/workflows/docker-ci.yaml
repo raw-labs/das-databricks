@@ -37,11 +37,13 @@ jobs:
         run: |
           CONTAINER_ID=$(docker run -d -p 50051 ${IMAGE})
           echo "CONTAINER_ID=${CONTAINER_ID}" >> $GITHUB_ENV
+          HOST_PORT=$(docker port ${CONTAINER_ID} 50051 | cut -d':' -f2)
+          echo "HOST_PORT=${HOST_PORT}" >> $GITHUB_ENV
           sleep 15
 
       - name: Test image - verify service is running
         run: |
-          docker exec ${CONTAINER_ID} /opt/docker/bin/healthcheck.sh
+          nc -z localhost ${HOST_PORT}
           if [ $? -ne 0 ]; then
             echo "Service check failed!"
             exit 1
