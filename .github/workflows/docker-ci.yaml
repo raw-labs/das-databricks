@@ -9,7 +9,6 @@ on:
 
 env:
   GITHUB_TOKEN: ${{ secrets.READ_PACKAGES }}
-  IMAGE_NAME: das-databricks-server
 
 jobs:
   build-and-test:
@@ -18,12 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Get Docker image name
+        run: |
+          DOCKER_TAG=$(echo '${{ github.head_ref || github.ref_name }}' | sed 's/[^a-zA-Z0-9_.-]/-/g')
+          echo "VERSION=${DOCKER_TAG}" >> $GITHUB_ENV
+          # Use our custom SBT task to get the exact image name
+          IMAGE_NAME=$(.github/scripts/dnd-sbt printDockerImageName | grep DOCKER_IMAGE | cut -d= -f2)
+          echo "Using Docker image: ${IMAGE_NAME}"
+          echo "IMAGE=${IMAGE_NAME}" >> $GITHUB_ENV
+
       - name: Build Docker image
         run: |
           .github/scripts/dnd-sbt Docker/publishLocal
-          DOCKER_TAG=$(echo '${{ github.head_ref || github.ref_name }}' | sed 's/[^a-zA-Z0-9_.-]/-/g')
-          echo "VERSION=${DOCKER_TAG}" >> $GITHUB_ENV
-          echo "IMAGE=ghcr.io/raw-labs/${IMAGE_NAME}:${DOCKER_TAG}" >> $GITHUB_ENV
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master

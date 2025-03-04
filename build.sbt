@@ -204,3 +204,12 @@ lazy val dockerSettings = Seq(
     }
   }
 )
+
+lazy val printDockerImageName = taskKey[Unit]("Prints the full Docker image name that will be produced")
+
+printDockerImageName := {
+  // Get the main Docker alias (the first one in the sequence)
+  val alias = (Docker / dockerAliases).value.head
+  // The toString method already returns the full image name with registry and tag
+  println(s"DOCKER_IMAGE=${alias}")
+}
