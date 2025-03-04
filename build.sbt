@@ -112,7 +112,7 @@ lazy val root = (project in file("."))
   )
 
 lazy val dockerSettings = Seq(
-  Docker / name := "das-databricks-server",
+  Docker / packageName := "das-databricks-server",
 
   dockerBaseImage := "eclipse-temurin:21-jre",
 
