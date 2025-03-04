@@ -94,10 +94,6 @@ lazy val root = (project in file("."))
       dockerSettings
     )
 
-val amzn_jdk_version = "21.0.4.7-1"
-val amzn_corretto_bin = s"java-21-amazon-corretto-jdk_${amzn_jdk_version}_amd64.deb"
-val amzn_corretto_bin_dl_url = s"https://corretto.aws/downloads/resources/${amzn_jdk_version.replace('-', '.')}"
-
 lazy val dockerSettings = strictBuildSettings ++ Seq(
   Docker/ packageName := "das-databricks-server",
   dockerBaseImage := "eclipse-temurin:21-jre",
@@ -117,20 +113,8 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
     case cmd                    => false
   },
   dockerCommands ++= Seq(
-    Cmd(
-      "RUN",
-      s"""set -eux \\
-      && apt-get update \\
-      && apt-get install -y --no-install-recommends \\
-        curl wget ca-certificates gnupg software-properties-common fontconfig java-common \\
-      && wget $amzn_corretto_bin_dl_url/$amzn_corretto_bin \\
-      && dpkg --install $amzn_corretto_bin \\
-      && rm -f $amzn_corretto_bin \\
-      && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \\
-          wget gnupg software-properties-common"""),
     Cmd("USER", "raw")),
   dockerEnvVars += "LANG" -> "C.UTF-8",
-  dockerEnvVars += "JAVA_HOME" -> "/usr/lib/jvm/java-21-amazon-corretto",
   Compile / doc / sources := Seq.empty, // Do not generate scaladocs
   // Skip docs to speed up build
   Compile / packageDoc / mappings := Seq(),
