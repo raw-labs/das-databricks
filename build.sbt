@@ -43,7 +43,9 @@ lazy val compileSettings = Seq(
   Compile / packageBin / packageOptions += Package.ManifestAttributes(
     "Automatic-Module-Name" -> name.value.replace('-', '.')),
   // Ensure Java annotations get compiled first, so that they are accessible from Scala.
-  compileOrder := CompileOrder.JavaThenScala)
+  compileOrder := CompileOrder.JavaThenScala,
+  Compile / mainClass := Some("com.rawlabs.das.server.DASServer")
+  )
 
 lazy val testSettings = Seq(
   // Ensuring tests are run in a forked JVM for isolation.
@@ -94,7 +96,7 @@ lazy val root = (project in file("."))
       dockerSettings
     )
 
-lazy val dockerSettings = strictBuildSettings ++ Seq(
+lazy val dockerSettings = Seq(
   Docker/ packageName := "das-databricks-server",
   dockerBaseImage := "eclipse-temurin:21-jre",
   dockerLabels ++= Map(
@@ -109,18 +111,7 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
   dockerExposedVolumes := Seq("/var/log/raw"),
   dockerExposedPorts := Seq(50051),
   dockerEnvVars := Map("PATH" -> s"${(Docker / defaultLinuxInstallLocation).value}/bin:$$PATH"),
-  // We remove the automatic switch to USER 1001:0.
-  // We we want to run as root to install the JDK, also later we will switch to a non-root user.
-  dockerCommands := dockerCommands.value.filterNot {
-    case Cmd("USER", args @ _*) => args.contains("1001:0")
-    case cmd                    => false
-  },
-  dockerCommands ++= Seq(
-    Cmd("USER", "raw")),
   dockerEnvVars += "LANG" -> "C.UTF-8",
-  Compile / doc / sources := Seq.empty, // Do not generate scaladocs
-  // Skip docs to speed up build
-  Compile / packageDoc / mappings := Seq(),
   updateOptions := updateOptions.value.withLatestSnapshots(true),
   Linux / linuxPackageMappings += packageTemplateMapping(s"/var/lib/${packageName.value}")(),
   bashScriptDefines := {
@@ -148,7 +139,6 @@ lazy val dockerSettings = strictBuildSettings ++ Seq(
     }
     case lm @ _ => lm
   },
-  Compile / mainClass := Some("com.rawlabs.das.server.DASServer"),
   dockerAlias := dockerAlias.value.withTag(Option(version.value.replace("+", "-"))),
   dockerAliases := {
     val devRegistry = sys.env.getOrElse("DEV_REGISTRY", "ghcr.io/raw-labs/das-databricks")
