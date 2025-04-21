@@ -59,7 +59,14 @@ jobs:
       - name: Generate Dependency Tree
         run: |
           mkdir -p ${{ env.REPORT_DIR }}
-          sbt dependencyTree > ${{ env.REPORT_DIR }}/deps.txt
+          # Force non-interactive mode and disable colors
+          export CI=true
+          export SBT_OPTS="-Dsbt.log.noformat=true"
+          # Write directly to file descriptor 3 to bypass stdout buffering
+          exec 3>${{ env.REPORT_DIR }}/deps.txt
+          sbt --no-colors --batch dependencyTree >&3
+          exec 3>&-
+
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
