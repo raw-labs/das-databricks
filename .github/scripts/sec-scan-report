@@ -118,6 +118,10 @@ while IFS= read -r vuln; do
                 .Description
             end
         )
+      },
+      "fingerprints": {
+        "primaryLocationLineHash": .VulnerabilityID,
+        "primaryLocationStartLineFingerprint": .PkgName
       }
     }' >> "$TMP_RESULTS"
 done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
