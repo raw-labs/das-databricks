@@ -25,14 +25,16 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           # Get latest release from GitHub API
-          LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)
-          echo "LATEST_TAG=${LATEST_TAG}" >> $GITHUB_ENV
+          LATEST_RELEASE_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)
+          # Remove leading 'v' from tag name if present
+          IMAGE_TAG=$(echo "$LATEST_RELEASE_TAG" | sed 's/^v//')
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
           # Extract repo name from github.repository (format: owner/repo)
           GIT_REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
 
           # Construct image name using repository info
-          IMAGE="ghcr.io/${{ github.repository }}/${GIT_REPO_NAME}-server:${LATEST_TAG}"
+          IMAGE="ghcr.io/${{ github.repository }}/${GIT_REPO_NAME}-server:${IMAGE_TAG}"
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
           docker pull $IMAGE
 
@@ -82,7 +84,7 @@ jobs:
         id: check_vulns
         run: |
           # Get the SHA of the latest tag
-          TAG_SHA=$(git rev-parse ${LATEST_TAG})
+          TAG_SHA=$(git rev-parse ${LATEST_RELEASE_TAG})
 
           # Get current scan results
           CURRENT_VULNS=$(jq -r '.Results[].Vulnerabilities[].VulnerabilityID' ${{ env.REPORT_DIR }}/vulnerabilities.json | sort)
@@ -105,4 +107,4 @@ jobs:
         with:
           sarif_file: '${{ env.REPORT_DIR }}/vulnerabilities.sarif'
           category: 'trivy'
-          ref: ${{ env.LATEST_TAG }}
+          ref: ${{ env.LATEST_RELEASE_TAG }}
