@@ -5,7 +5,6 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 env:
-  GITHUB_TOKEN: ${{ secrets.READ_PACKAGES }}
   REPORT_DIR: security-reports
 
 jobs:
@@ -19,7 +18,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ env.GITHUB_TOKEN }}
 
       - name: Get image
         run: |
