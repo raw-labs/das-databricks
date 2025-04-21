@@ -59,13 +59,8 @@ jobs:
       - name: Generate Dependency Tree
         run: |
           mkdir -p ${{ env.REPORT_DIR }}
-          # Force non-interactive mode and disable colors
-          export CI=true
-          export SBT_OPTS="-Dsbt.log.noformat=true"
-          # Write directly to file descriptor 3 to bypass stdout buffering
-          exec 3>${{ env.REPORT_DIR }}/deps.txt
-          sbt --no-colors --batch dependencyTree >&3
-          exec 3>&-
+          sbt dependencyBrowseTreeHTML
+          mv target/tree.json ${{ env.REPORT_DIR }}/deptree.json
 
 
       - name: Run Trivy vulnerability scanner
@@ -82,21 +77,11 @@ jobs:
         run: |
           .github/scripts/sec-scan-report \
             ${{ env.REPORT_DIR }}/vulnerabilities.json \
-            ${{ env.REPORT_DIR }}/deps.txt \
+            ${{ env.REPORT_DIR }}/deptree.json \
             ${{ env.REPORT_DIR }}/vulnerabilities.sarif
 
           # Output markdown summary to GitHub step summary
           cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload debug files
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-scan-debug
-          path: |
-            ${{ env.REPORT_DIR }}/vulnerabilities.json
-            ${{ env.REPORT_DIR }}/deps.txt
-            ${{ env.REPORT_DIR }}/vulnerabilities.sarif
-            ${{ env.REPORT_DIR }}/vulnerabilities.md
 
       - name: Check for new vulnerabilities
         id: check_vulns

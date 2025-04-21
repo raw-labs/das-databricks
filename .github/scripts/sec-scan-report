@@ -8,7 +8,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <trivy-report.json> <dependency-tree.txt> <output-file.sarif>"
+    echo "Usage: $0 <trivy-report.json> <dependency-tree.json> <output-file.sarif>"
     exit 1
 fi
 
@@ -16,22 +16,60 @@ TRIVY_FILE="$1"
 DEPS_FILE="$2"
 REPORT_FILE="$3"
 
-# Function to find dependency path
+# Function to find dependency path in JSON tree
 find_dependency_path() {
     local pkg_name=$1
-    local dep_lines
-    dep_lines=$(grep -A 10 "$pkg_name" "$DEPS_FILE" || echo "Direct dependency")
+    local raw_paths
 
-    # Find the first com.raw-labs dependency in the path
-    local raw_dep
-    raw_dep=$(echo "$dep_lines" | grep -m 1 "com\.raw-labs")
+    # First try exact match
+    raw_paths=$(jq -r --arg pkg "$pkg_name" '
+        def find_paths($pkg; $current_path):
+            if (.text | type) == "string" and (.text | contains($pkg)) then
+                if $current_path == "" then $current_path + .text
+                else $current_path + " -> " + .text
+                end
+            elif (.children | type) == "array" then
+                (.children[] | find_paths($pkg; if $current_path == "" then .text else $current_path + " -> " + .text end))
+            else
+                empty
+            end;
+        [.[] | find_paths($pkg; "")] | unique | select(length > 0)
+    ' "$DEPS_FILE")
 
-    if [[ -z "$dep_lines" || "$dep_lines" == "Direct dependency" ]]; then
-        echo "DIRECT"
-    elif [[ -n "$raw_dep" ]]; then
-        echo "$raw_dep"
+    # If no exact match, try fuzzy match
+    if [ -z "$raw_paths" ] || [ "$raw_paths" = "[]" ]; then
+        raw_paths=$(jq -r --arg pkg "${pkg_name%:*}" '
+            def find_paths($pkg; $current_path):
+                if (.text | type) == "string" and (.text | contains($pkg)) then
+                    if $current_path == "" then $current_path + .text
+                    else $current_path + " -> " + .text
+                    end
+                elif (.children | type) == "array" then
+                    (.children[] | find_paths($pkg; if $current_path == "" then .text else $current_path + " -> " + .text end))
+                else
+                    empty
+                end;
+            [.[] | find_paths($pkg; "")] | unique | select(length > 0)
+        ' "$DEPS_FILE")
+    fi
+
+    # Return dependency type and paths
+    if [ -z "$raw_paths" ]; then
+        echo '{"type": "DIRECT", "paths": []}'
     else
-        echo "EXTERNAL"
+        echo "$raw_paths" | jq -r '
+            if (map(select(contains("com.raw-labs"))) | length > 0) then
+                {
+                    "type": "RAWLABS",
+                    "paths": map(select(contains("com.raw-labs")))
+                }
+            else
+                {
+                    "type": "EXTERNAL",
+                    "paths": .
+                }
+            end
+        '
     fi
 }
 
@@ -41,10 +79,10 @@ TMP_RESULTS=$(mktemp)
 # Process each vulnerability
 while IFS= read -r vuln; do
     pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-    dep_type=$(find_dependency_path "$pkg_name")
+    dep_info=$(find_dependency_path "$pkg_name")
 
     # Create SARIF result with dependency path info
-    echo "$vuln" | jq -c --arg dep_type "$dep_type" '
+    echo "$vuln" | jq -c --argjson dep_info "$dep_info" '
     {
       "ruleId": .VulnerabilityID,
       "level": (if .Severity == "CRITICAL" then "error" elif .Severity == "HIGH" then "warning" else "note" end),
@@ -59,13 +97,19 @@ while IFS= read -r vuln; do
         }
       }],
       "properties": {
-        "dependencyType": $dep_type,
+        "dependencyType": $dep_info.type,
         "fixedVersion": .FixedVersion,
         "severity": .Severity,
         "packageName": .PkgName,
         "vulnerabilityId": .VulnerabilityID,
         "title": .Title,
-        "description": .Description
+        "description": (
+            if $dep_info.type == "RAWLABS" then
+                "Dependency Chain(s):\n" + ($dep_info.paths | map("  • " + .) | join("\n")) + "\n\n" + .Description
+            else
+                .Description
+            end
+        )
       }
     }' >> "$TMP_RESULTS"
 done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
@@ -117,8 +161,8 @@ fi
     echo
     while IFS= read -r vuln; do
         pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-        dep_type=$(find_dependency_path "$pkg_name")
-        if [[ "$dep_type" == "DIRECT" ]]; then
+        dep_info=$(find_dependency_path "$pkg_name")
+        if echo "$dep_info" | jq -e '.type == "DIRECT"' > /dev/null; then
             echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
         fi
     done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
@@ -128,9 +172,12 @@ fi
     echo
     while IFS= read -r vuln; do
         pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-        dep_type=$(find_dependency_path "$pkg_name")
-        if [[ "$dep_type" != "DIRECT" && "$dep_type" != "EXTERNAL" ]]; then
-            echo "$vuln" | jq -r --arg dep "$dep_type" '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)\n   Via: \($dep)"'
+        dep_info=$(find_dependency_path "$pkg_name")
+        if echo "$dep_info" | jq -e '.type == "RAWLABS"' > /dev/null; then
+            paths=$(echo "$dep_info" | jq -r '.paths | map("  • " + .) | join("\n")')
+            echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
+            echo "$paths"
+            echo
         fi
     done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
     echo
@@ -139,8 +186,8 @@ fi
     echo
     while IFS= read -r vuln; do
         pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-        dep_type=$(find_dependency_path "$pkg_name")
-        if [[ "$dep_type" == "EXTERNAL" ]]; then
+        dep_info=$(find_dependency_path "$pkg_name")
+        if echo "$dep_info" | jq -e '.type == "EXTERNAL"' > /dev/null; then
             echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
         fi
     done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
