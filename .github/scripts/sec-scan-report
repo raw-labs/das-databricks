@@ -223,6 +223,3 @@ case "${REPORT_FILE##*.}" in
         exit 1
         ;;
 esac
-
-# Print the report to stdout
-cat "$REPORT_FILE"
