@@ -70,9 +70,9 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           #severity: 'CRITICAL,HIGH'
+
       - name: Generate Enhanced SARIF Report
         run: |
-          chmod +x .github/scripts/sec-scan-report
           .github/scripts/sec-scan-report \
             ${{ env.REPORT_DIR }}/vulnerabilities.json \
             ${{ env.REPORT_DIR }}/deps.txt \
@@ -80,6 +80,16 @@ jobs:
 
           # Output markdown summary to GitHub step summary
           cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload debug files
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-debug
+          path: |
+            ${{ env.REPORT_DIR }}/vulnerabilities.json
+            ${{ env.REPORT_DIR }}/deps.txt
+            ${{ env.REPORT_DIR }}/vulnerabilities.sarif
+            ${{ env.REPORT_DIR }}/vulnerabilities.md
 
       - name: Check for new vulnerabilities
         id: check_vulns

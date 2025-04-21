@@ -16,6 +16,18 @@ TRIVY_FILE="$1"
 DEPS_FILE="$2"
 REPORT_FILE="$3"
 
+# Debug: Print input file sizes and first few lines
+echo "Debug: Input file sizes and previews:"
+ls -l "$TRIVY_FILE" "$DEPS_FILE"
+echo "First 10 lines of Trivy report:"
+head -n 10 "$TRIVY_FILE"
+echo "First 10 lines of deps file:"
+head -n 10 "$DEPS_FILE"
+
+# Debug: Print total vulnerabilities found
+TOTAL_VULNS=$(jq '.Results[] | select(.Vulnerabilities) | .Vulnerabilities | length' "$TRIVY_FILE" | awk '{sum+=$1} END{print sum}')
+echo "Debug: Total vulnerabilities found in Trivy report: $TOTAL_VULNS"
+
 # Function to find dependency path
 find_dependency_path() {
     local pkg_name=$1
@@ -34,6 +46,13 @@ find_dependency_path() {
         echo "EXTERNAL"
     fi
 }
+
+# Debug: Test dependency path function for a few packages
+echo "Debug: Testing dependency path function:"
+echo "Testing for 'logback-core':"
+find_dependency_path "logback-core"
+echo "Testing for 'netty-codec-http':"
+find_dependency_path "netty-codec-http"
 
 # Create a temporary file for the results array
 TMP_RESULTS=$(mktemp)
