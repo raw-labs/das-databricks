@@ -92,7 +92,15 @@ while IFS= read -r vuln; do
       "locations": [{
         "physicalLocation": {
           "artifactLocation": {
-            "uri": "\(.PkgName)"
+            "uri": (
+              if $dep_info.type == "DIRECT" then
+                "system/\(.PkgName)"
+              elif $dep_info.type == "RAWLABS" then
+                "dependencies/\(.PkgName | gsub(":"; "/"))"
+              else
+                "external/\(.PkgName | gsub(":"; "/"))"
+              end
+            )
           }
         }
       }],

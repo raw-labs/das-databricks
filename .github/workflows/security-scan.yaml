@@ -82,16 +82,6 @@ jobs:
           # Output markdown summary to GitHub step summary
           cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload debug files
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-scan-debug
-          path: |
-            ${{ env.REPORT_DIR }}/vulnerabilities.json
-            ${{ env.REPORT_DIR }}/deptree.json
-            ${{ env.REPORT_DIR }}/vulnerabilities.sarif
-            ${{ env.REPORT_DIR }}/vulnerabilities.md
-
       - name: Check for new vulnerabilities
         id: check_vulns
         run: |
@@ -101,13 +91,15 @@ jobs:
           # Get current scan results
           CURRENT_VULNS=$(jq -r '.Results[].Vulnerabilities[].VulnerabilityID' ${{ env.REPORT_DIR }}/vulnerabilities.json | sort)
 
-          # Get previous scan results from GitHub API
+          # Get previous scan results from GitHub API, handle empty case
           PREV_VULNS=$(gh api repos/${{ github.repository }}/code-scanning/alerts \
             --jq '.[] | select(.most_recent_instance.ref == "'$TAG_SHA'") | .rule.security_severity_level' \
-            | sort)
+            | sort || echo "")
 
-          # Compare results
-          if [ "$CURRENT_VULNS" != "$PREV_VULNS" ]; then
+          # Compare results, handle empty cases
+          if [ -z "$CURRENT_VULNS" ] && [ -z "$PREV_VULNS" ]; then
+            echo "NEW_VULNS=false" >> $GITHUB_ENV
+          elif [ "$CURRENT_VULNS" != "$PREV_VULNS" ]; then
             echo "NEW_VULNS=true" >> $GITHUB_ENV
           else
             echo "NEW_VULNS=false" >> $GITHUB_ENV
