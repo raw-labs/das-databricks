@@ -52,7 +52,7 @@ jobs:
 
       - uses: sbt/setup-sbt@v1
         with:
-          sbt-version: ${{ steps.get-sbt-version.outputs.sbt_version }}
+          sbt-runner-version: ${{ steps.get-sbt-version.outputs.sbt_version }}
 
       - name: Generate Dependency Tree
         run: |
@@ -67,8 +67,7 @@ jobs:
           output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
           ignore-unfixed: true
           vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-
+          #severity: 'CRITICAL,HIGH'
       - name: Generate Enhanced SARIF Report
         run: |
           chmod +x .github/scripts/sec-scan-report
