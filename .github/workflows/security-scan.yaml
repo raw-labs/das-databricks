@@ -69,7 +69,7 @@ jobs:
           output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
           ignore-unfixed: true
           vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          #severity: 'CRITICAL,HIGH'
 
       - name: Check for vulnerabilities
         id: check_vulns
@@ -149,7 +149,7 @@ jobs:
           fi
 
       - name: Create or Update Security Report Issue
-        if: env.FOUND_VULNS == 'true' && env.EXISTING_REPORT == 'false'
+        if: env.FOUND_VULNS == 'true'
         run: |
           # Get current date
           CURRENT_DATE=$(date '+%Y-%m-%d')
@@ -167,7 +167,7 @@ jobs:
           ### Summary
           $(cat ${{ env.REPORT_DIR }}/vulnerabilities.md)
 
-          ### Action Required
+          ## Action Required
           - [ ] Review all vulnerabilities
           - [ ] Prioritize fixes based on severity
           - [ ] Plan updates for packages with available fixes
@@ -192,8 +192,19 @@ jobs:
             LABELS="$LABELS,severity:low"
           fi
 
-          # Create the issue
-          gh issue create \
-            --title "$TITLE" \
-            --body "$BODY" \
-            --label "$LABELS"
+          if [ "$EXISTING_REPORT" = "true" ]; then
+            # Update existing issue
+            gh issue edit "$ISSUE_NUMBER" \
+              --title "$TITLE" \
+              --body "$BODY"
+
+            # Update labels
+            gh issue edit "$ISSUE_NUMBER" --remove-label "*"
+            gh issue edit "$ISSUE_NUMBER" --add-label "$LABELS"
+          else
+            # Create new issue
+            gh issue create \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label "$LABELS"
+          fi

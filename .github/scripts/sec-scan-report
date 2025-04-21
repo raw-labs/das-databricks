@@ -86,7 +86,7 @@ generate_markdown() {
         echo
 
         # Group by dependency source
-        echo "## Direct Dependencies"
+        echo "## System Dependencies"
         echo
         while IFS= read -r vuln; do
             pkg_name=$(echo "$vuln" | jq -r '.PkgName')
@@ -96,8 +96,9 @@ generate_markdown() {
             fi
         done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
         echo
-
-        echo "## Via Raw Labs Dependencies"
+        echo "## Library Dependencies"
+        echo
+        echo "### From Raw Labs"
         echo
         while IFS= read -r vuln; do
             pkg_name=$(echo "$vuln" | jq -r '.PkgName')
@@ -111,7 +112,7 @@ generate_markdown() {
         done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
         echo
 
-        echo "## External Dependencies"
+        echo "### From Third-party"
         echo
         while IFS= read -r vuln; do
             pkg_name=$(echo "$vuln" | jq -r '.PkgName')
