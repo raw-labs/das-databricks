@@ -92,10 +92,44 @@ jobs:
           .github/scripts/sec-scan-report \
             ${{ env.REPORT_DIR }}/vulnerabilities.json \
             ${{ env.REPORT_DIR }}/deptree.json \
-            ${{ env.REPORT_DIR }}/vulnerabilities.sarif
+            ${{ env.REPORT_DIR }}/vulnerabilities.md
 
           # Output markdown summary to GitHub step summary
           cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Ensure labels exist
+        run: |
+          # Function to create label if it doesn't exist
+          create_label() {
+            local name=$1
+            local color=$2
+            local description=$3
+
+            # Check if label exists
+            if ! gh label list | grep -q "^$name"; then
+              echo "Creating label: $name"
+              gh label create "$name" --color "$color" --description "$description"
+            fi
+          }
+
+          # Create base labels
+          create_label "security" "d73a4a" "Security-related issues"
+          create_label "automated" "0366d6" "Automatically generated content"
+          create_label "version:${{ env.IMAGE_TAG }}" "0366d6" "Issues related to version ${{ env.IMAGE_TAG }}"
+
+          # Create severity labels if vulnerabilities exist
+          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "CRITICAL")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+            create_label "severity:critical" "b60205" "Critical severity vulnerabilities"
+          fi
+          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "HIGH")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+            create_label "severity:high" "d93f0b" "High severity vulnerabilities"
+          fi
+          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "MEDIUM")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+            create_label "severity:medium" "fbca04" "Medium severity vulnerabilities"
+          fi
+          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "LOW")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+            create_label "severity:low" "0e8a16" "Low severity vulnerabilities"
+          fi
 
       - name: Create or Update Security Report Issue
         if: env.EXISTING_REPORT == 'false'

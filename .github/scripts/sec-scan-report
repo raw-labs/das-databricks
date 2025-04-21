@@ -8,7 +8,7 @@ if ! command -v jq &> /dev/null; then
 fi
 
 if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <trivy-report.json> <dependency-tree.json> <output-file.sarif>"
+    echo "Usage: $0 <trivy-report.json> <dependency-tree.json> <output-file.[sarif|md]>"
     exit 1
 fi
 
@@ -73,136 +73,156 @@ find_dependency_path() {
     fi
 }
 
-# Create a temporary file for the results array
-TMP_RESULTS=$(mktemp)
-
-# Process each vulnerability
-while IFS= read -r vuln; do
-    pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-    dep_info=$(find_dependency_path "$pkg_name")
-
-    # Create SARIF result with dependency path info
-    echo "$vuln" | jq -c --argjson dep_info "$dep_info" '
+# Generate markdown report
+generate_markdown() {
     {
-      "ruleId": .VulnerabilityID,
-      "level": (if .Severity == "CRITICAL" then "error" elif .Severity == "HIGH" then "warning" else "note" end),
-      "message": {
-        "text": "\(.PkgName) (\(.Severity)) - \(.Title)"
-      },
-      "locations": [{
-        "physicalLocation": {
-          "artifactLocation": {
-            "uri": (
-              if $dep_info.type == "DIRECT" then
-                "system/\(.PkgName)"
-              elif $dep_info.type == "RAWLABS" then
-                "dependencies/\(.PkgName | gsub(":"; "/"))"
-              else
-                "external/\(.PkgName | gsub(":"; "/"))"
-              end
+        echo "# 🔍 Vulnerability Summary"
+        echo "Generated on: $(date)"
+        echo
+
+        # Print total count
+        total_vulns=$(jq -r '.Results[] | select(.Vulnerabilities) | .Vulnerabilities | length' "$TRIVY_FILE" | awk '{sum+=$1} END{print sum}')
+        echo "Found $total_vulns vulnerabilities"
+        echo
+
+        # Group by dependency source
+        echo "## Direct Dependencies"
+        echo
+        while IFS= read -r vuln; do
+            pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+            dep_info=$(find_dependency_path "$pkg_name")
+            if echo "$dep_info" | jq -e '.type == "DIRECT"' > /dev/null; then
+                echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
+            fi
+        done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+        echo
+
+        echo "## Via Raw Labs Dependencies"
+        echo
+        while IFS= read -r vuln; do
+            pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+            dep_info=$(find_dependency_path "$pkg_name")
+            if echo "$dep_info" | jq -e '.type == "RAWLABS"' > /dev/null; then
+                paths=$(echo "$dep_info" | jq -r '.paths | map("  • " + .) | join("\n")')
+                echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
+                echo "$paths"
+                echo
+            fi
+        done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+        echo
+
+        echo "## External Dependencies"
+        echo
+        while IFS= read -r vuln; do
+            pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+            dep_info=$(find_dependency_path "$pkg_name")
+            if echo "$dep_info" | jq -e '.type == "EXTERNAL"' > /dev/null; then
+                echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
+            fi
+        done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+    } > "$REPORT_FILE"
+}
+
+# Generate SARIF report
+generate_sarif() {
+    # Create a temporary file for the results array
+    TMP_RESULTS=$(mktemp)
+
+    # Process each vulnerability
+    while IFS= read -r vuln; do
+        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+        dep_info=$(find_dependency_path "$pkg_name")
+
+        # Create SARIF result with dependency path info
+        echo "$vuln" | jq -c --argjson dep_info "$dep_info" '
+        {
+          "ruleId": .VulnerabilityID,
+          "level": (if .Severity == "CRITICAL" then "error" elif .Severity == "HIGH" then "warning" else "note" end),
+          "message": {
+            "text": "\(.PkgName) (\(.Severity)) - \(.Title)"
+          },
+          "locations": [{
+            "physicalLocation": {
+              "artifactLocation": {
+                "uri": (
+                  if $dep_info.type == "DIRECT" then
+                    "system/\(.PkgName)"
+                  elif $dep_info.type == "RAWLABS" then
+                    "dependencies/\(.PkgName | gsub(":"; "/"))"
+                  else
+                    "external/\(.PkgName | gsub(":"; "/"))"
+                  end
+                )
+              }
+            }
+          }],
+          "properties": {
+            "dependencyType": $dep_info.type,
+            "fixedVersion": .FixedVersion,
+            "severity": .Severity,
+            "packageName": .PkgName,
+            "vulnerabilityId": .VulnerabilityID,
+            "title": .Title,
+            "description": (
+                if $dep_info.type == "RAWLABS" then
+                    "Dependency Chain(s):\n" + ($dep_info.paths | map("  • " + .) | join("\n")) + "\n\n" + .Description
+                else
+                    .Description
+                end
             )
+          },
+          "fingerprints": {
+            "primaryLocationLineHash": .VulnerabilityID,
+            "primaryLocationStartLineFingerprint": .PkgName
           }
-        }
-      }],
-      "properties": {
-        "dependencyType": $dep_info.type,
-        "fixedVersion": .FixedVersion,
-        "severity": .Severity,
-        "packageName": .PkgName,
-        "vulnerabilityId": .VulnerabilityID,
-        "title": .Title,
-        "description": (
-            if $dep_info.type == "RAWLABS" then
-                "Dependency Chain(s):\n" + ($dep_info.paths | map("  • " + .) | join("\n")) + "\n\n" + .Description
-            else
-                .Description
-            end
-        )
-      },
-      "fingerprints": {
-        "primaryLocationLineHash": .VulnerabilityID,
-        "primaryLocationStartLineFingerprint": .PkgName
-      }
-    }' >> "$TMP_RESULTS"
-done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
-
-# Create the final SARIF file
-{
-    echo '{
-      "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-      "version": "2.1.0",
-      "runs": [{
-        "tool": {
-          "driver": {
-            "name": "Trivy",
-            "informationUri": "https://github.com/aquasecurity/trivy"
-          }
-        },
-        "results": ['
-
-    # Add results with proper comma separation
-    paste -sd ',' "$TMP_RESULTS"
-
-    echo '        ]
-      }]
-    }'
-} > "$REPORT_FILE"
-
-# Clean up
-rm "$TMP_RESULTS"
-
-# Validate the SARIF file
-if ! jq empty "$REPORT_FILE" 2>/dev/null; then
-    echo "Error: Generated SARIF file is not valid JSON"
-    exit 1
-fi
-
-# Generate markdown summary
-{
-    echo "# 🔍 Vulnerability Summary"
-    echo "Generated on: $(date)"
-    echo
-
-    # Print total count
-    total_vulns=$(jq -r '.Results[] | select(.Vulnerabilities) | .Vulnerabilities | length' "$TRIVY_FILE" | awk '{sum+=$1} END{print sum}')
-    echo "Found $total_vulns vulnerabilities"
-    echo
-
-    # Group by dependency source
-    echo "## Direct Dependencies"
-    echo
-    while IFS= read -r vuln; do
-        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-        dep_info=$(find_dependency_path "$pkg_name")
-        if echo "$dep_info" | jq -e '.type == "DIRECT"' > /dev/null; then
-            echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
-        fi
+        }' >> "$TMP_RESULTS"
     done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
-    echo
 
-    echo "## Via Raw Labs Dependencies"
-    echo
-    while IFS= read -r vuln; do
-        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-        dep_info=$(find_dependency_path "$pkg_name")
-        if echo "$dep_info" | jq -e '.type == "RAWLABS"' > /dev/null; then
-            paths=$(echo "$dep_info" | jq -r '.paths | map("  • " + .) | join("\n")')
-            echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
-            echo "$paths"
-            echo
-        fi
-    done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
-    echo
+    # Create the final SARIF file
+    {
+        echo '{
+          "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+          "version": "2.1.0",
+          "runs": [{
+            "tool": {
+              "driver": {
+                "name": "Trivy",
+                "informationUri": "https://github.com/aquasecurity/trivy"
+              }
+            },
+            "results": ['
 
-    echo "## External Dependencies"
-    echo
-    while IFS= read -r vuln; do
-        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
-        dep_info=$(find_dependency_path "$pkg_name")
-        if echo "$dep_info" | jq -e '.type == "EXTERNAL"' > /dev/null; then
-            echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
-        fi
-    done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
-} > "${REPORT_FILE%.sarif}.md"
+        # Add results with proper comma separation
+        paste -sd ',' "$TMP_RESULTS"
 
-cat "${REPORT_FILE%.sarif}.md"
+        echo '        ]
+          }]
+        }'
+    } > "$REPORT_FILE"
+
+    # Clean up
+    rm "$TMP_RESULTS"
+
+    # Validate the SARIF file
+    if ! jq empty "$REPORT_FILE" 2>/dev/null; then
+        echo "Error: Generated SARIF file is not valid JSON"
+        exit 1
+    fi
+}
+
+# Determine output format based on file extension
+case "${REPORT_FILE##*.}" in
+    "md")
+        generate_markdown
+        ;;
+    "sarif")
+        generate_sarif
+        ;;
+    *)
+        echo "Error: Output file must have .md or .sarif extension"
+        exit 1
+        ;;
+esac
+
+# Print the report to stdout
+cat "$REPORT_FILE"
