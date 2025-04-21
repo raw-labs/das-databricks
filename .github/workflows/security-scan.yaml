@@ -198,8 +198,12 @@ jobs:
               --title "$TITLE" \
               --body "$BODY"
 
-            # Update labels
-            gh issue edit "$ISSUE_NUMBER" --remove-label "*"
+            # Get current labels and remove them one by one
+            gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | while read -r label; do
+              gh issue edit "$ISSUE_NUMBER" --remove-label "$label"
+            done
+
+            # Add new labels
             gh issue edit "$ISSUE_NUMBER" --add-label "$LABELS"
           else
             # Create new issue
