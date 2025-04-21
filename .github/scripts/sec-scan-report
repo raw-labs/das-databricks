@@ -1,0 +1,149 @@
+#!/bin/bash
+set -e
+
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is required but not installed. Please install it first."
+    exit 1
+fi
+
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <trivy-report.json> <dependency-tree.txt> <output-file.sarif>"
+    exit 1
+fi
+
+TRIVY_FILE="$1"
+DEPS_FILE="$2"
+REPORT_FILE="$3"
+
+# Function to find dependency path
+find_dependency_path() {
+    local pkg_name=$1
+    local dep_lines
+    dep_lines=$(grep -A 10 "$pkg_name" "$DEPS_FILE" || echo "Direct dependency")
+
+    # Find the first com.raw-labs dependency in the path
+    local raw_dep
+    raw_dep=$(echo "$dep_lines" | grep -m 1 "com\.raw-labs")
+
+    if [[ -z "$dep_lines" || "$dep_lines" == "Direct dependency" ]]; then
+        echo "DIRECT"
+    elif [[ -n "$raw_dep" ]]; then
+        echo "$raw_dep"
+    else
+        echo "EXTERNAL"
+    fi
+}
+
+# Create a temporary file for the results array
+TMP_RESULTS=$(mktemp)
+
+# Process each vulnerability
+while IFS= read -r vuln; do
+    pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+    dep_type=$(find_dependency_path "$pkg_name")
+
+    # Create SARIF result with dependency path info
+    echo "$vuln" | jq -c --arg dep_type "$dep_type" '
+    {
+      "ruleId": .VulnerabilityID,
+      "level": (if .Severity == "CRITICAL" then "error" elif .Severity == "HIGH" then "warning" else "note" end),
+      "message": {
+        "text": "\(.PkgName) (\(.Severity)) - \(.Title)"
+      },
+      "locations": [{
+        "physicalLocation": {
+          "artifactLocation": {
+            "uri": "\(.PkgName)"
+          }
+        }
+      }],
+      "properties": {
+        "dependencyType": $dep_type,
+        "fixedVersion": .FixedVersion,
+        "severity": .Severity,
+        "packageName": .PkgName,
+        "vulnerabilityId": .VulnerabilityID,
+        "title": .Title,
+        "description": .Description
+      }
+    }' >> "$TMP_RESULTS"
+done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+
+# Create the final SARIF file
+{
+    echo '{
+      "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+      "version": "2.1.0",
+      "runs": [{
+        "tool": {
+          "driver": {
+            "name": "Trivy",
+            "informationUri": "https://github.com/aquasecurity/trivy"
+          }
+        },
+        "results": ['
+
+    # Add results with proper comma separation
+    paste -sd ',' "$TMP_RESULTS"
+
+    echo '        ]
+      }]
+    }'
+} > "$REPORT_FILE"
+
+# Clean up
+rm "$TMP_RESULTS"
+
+# Validate the SARIF file
+if ! jq empty "$REPORT_FILE" 2>/dev/null; then
+    echo "Error: Generated SARIF file is not valid JSON"
+    exit 1
+fi
+
+# Generate markdown summary
+{
+    echo "# 🔍 Vulnerability Summary"
+    echo "Generated on: $(date)"
+    echo
+
+    # Print total count
+    total_vulns=$(jq -r '.Results[] | select(.Vulnerabilities) | .Vulnerabilities | length' "$TRIVY_FILE" | awk '{sum+=$1} END{print sum}')
+    echo "Found $total_vulns vulnerabilities"
+    echo
+
+    # Group by dependency source
+    echo "## Direct Dependencies"
+    echo
+    while IFS= read -r vuln; do
+        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+        dep_type=$(find_dependency_path "$pkg_name")
+        if [[ "$dep_type" == "DIRECT" ]]; then
+            echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
+        fi
+    done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+    echo
+
+    echo "## Via Raw Labs Dependencies"
+    echo
+    while IFS= read -r vuln; do
+        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+        dep_type=$(find_dependency_path "$pkg_name")
+        if [[ "$dep_type" != "DIRECT" && "$dep_type" != "EXTERNAL" ]]; then
+            echo "$vuln" | jq -r --arg dep "$dep_type" '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)\n   Via: \($dep)"'
+        fi
+    done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+    echo
+
+    echo "## External Dependencies"
+    echo
+    while IFS= read -r vuln; do
+        pkg_name=$(echo "$vuln" | jq -r '.PkgName')
+        dep_type=$(find_dependency_path "$pkg_name")
+        if [[ "$dep_type" == "EXTERNAL" ]]; then
+            echo "$vuln" | jq -r '"⚠️ \(.PkgName) (\(.Severity)) → Fixed in: \(.FixedVersion)"'
+        fi
+    done < <(jq -c '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[]' "$TRIVY_FILE")
+} > "${REPORT_FILE%.sarif}.md"
+
+cat "${REPORT_FILE%.sarif}.md"

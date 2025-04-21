@@ -1,0 +1,107 @@
+name: Security Scan
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight UTC
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  GITHUB_TOKEN: ${{ secrets.READ_PACKAGES }}
+  REPORT_DIR: security-reports
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get image
+        run: |
+          # Get latest release from GitHub API
+          LATEST_TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)
+          echo "LATEST_TAG=${LATEST_TAG}" >> $GITHUB_ENV
+
+          # Extract repo name from github.repository (format: owner/repo)
+          GIT_REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
+
+          # Construct image name using repository info
+          IMAGE="ghcr.io/${{ github.repository }}/${GIT_REPO_NAME}-server:${LATEST_TAG}"
+          echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
+          docker pull $IMAGE
+
+      - name: Get sbt version
+        id: get-sbt-version
+        run: |
+          SBT_VERSION=$(grep 'sbt.version=' project/build.properties | cut -d'=' -f2)
+          echo "sbt_version=${SBT_VERSION}" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'sbt'
+
+      - uses: sbt/setup-sbt@v1
+        with:
+          sbt-version: ${{ steps.get-sbt-version.outputs.sbt_version }}
+
+      - name: Generate Dependency Tree
+        run: |
+          mkdir -p ${{ env.REPORT_DIR }}
+          sbt dependencyTree > ${{ env.REPORT_DIR }}/deps.txt
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: 'json'
+          output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Generate Enhanced SARIF Report
+        run: |
+          chmod +x .github/scripts/sec-scan-report
+          .github/scripts/sec-scan-report \
+            ${{ env.REPORT_DIR }}/vulnerabilities.json \
+            ${{ env.REPORT_DIR }}/deps.txt \
+            ${{ env.REPORT_DIR }}/vulnerabilities.sarif
+
+          # Output markdown summary to GitHub step summary
+          cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Check for new vulnerabilities
+        id: check_vulns
+        run: |
+          # Get the SHA of the latest tag
+          TAG_SHA=$(git rev-parse ${LATEST_TAG})
+
+          # Get current scan results
+          CURRENT_VULNS=$(jq -r '.Results[].Vulnerabilities[].VulnerabilityID' ${{ env.REPORT_DIR }}/vulnerabilities.json | sort)
+
+          # Get previous scan results from GitHub API
+          PREV_VULNS=$(gh api repos/${{ github.repository }}/code-scanning/alerts \
+            --jq '.[] | select(.most_recent_instance.ref == "'$TAG_SHA'") | .rule.security_severity_level' \
+            | sort)
+
+          # Compare results
+          if [ "$CURRENT_VULNS" != "$PREV_VULNS" ]; then
+            echo "NEW_VULNS=true" >> $GITHUB_ENV
+          else
+            echo "NEW_VULNS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: env.NEW_VULNS == 'true'
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: '${{ env.REPORT_DIR }}/vulnerabilities.sarif'
+          category: 'trivy'
+          ref: ${{ env.LATEST_TAG }}
