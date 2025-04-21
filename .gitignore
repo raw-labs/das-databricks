@@ -5,3 +5,8 @@
 target/
 .bsp/
 .idea/
+
+deptree.txt
+results.json
+results.sarif
+results.md
