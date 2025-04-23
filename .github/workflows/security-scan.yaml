@@ -65,15 +65,15 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE }}
-          format: 'json'
-          output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
+          #format: 'json'
+          #output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
           ignore-unfixed: true
           vuln-type: 'os,library'
           #severity: 'CRITICAL,HIGH'
           format: 'github'
           output: 'dependency-results.sbom.json'
           github-pat: ${{ github.token }} # or ${{ secrets.github_pat_name }} if you're using a PAT
-          severity: "MEDIUM,HIGH,CRITICAL"
+
 
       #- name: Check for vulnerabilities
       #  id: check_vulns
