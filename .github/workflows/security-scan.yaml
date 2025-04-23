@@ -37,7 +37,7 @@ jobs:
           # Construct image name using repository info
           IMAGE="ghcr.io/${{ github.repository }}/${GIT_REPO_NAME}-server:${IMAGE_TAG}"
           echo "IMAGE=${IMAGE}" >> $GITHUB_ENV
-          docker pull $IMAGE
+          #docker pull $IMAGE
 
       - name: Get sbt version
         id: get-sbt-version
@@ -65,14 +65,12 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE }}
-          #format: 'json'
-          #output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
+          format: 'json'
+          output: '${{ env.REPORT_DIR }}/vulnerabilities.json'
           ignore-unfixed: true
           vuln-type: 'os,library'
           #severity: 'CRITICAL,HIGH'
-          format: 'github'
-          output: 'dependency-results.sbom.json'
-          github-pat: ${{ github.token }} # or ${{ secrets.github_pat_name }} if you're using a PAT
+          github-pat: ${{ github.token }}
 
 
       #- name: Check for vulnerabilities
