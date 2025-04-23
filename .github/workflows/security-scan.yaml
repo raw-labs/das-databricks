@@ -20,3 +20,4 @@ jobs:
       - uses: raw-labs/das-sec-scan@main
         with:
           severity: CRITICAL,HIGH,MEDIUM,LOW
+          github-token: ${{ github.token }}
