@@ -17,11 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+      #- uses: docker/login-action@v3
+      #  with:
+      #    registry: ghcr.io
+      #    username: ${{ github.actor }}
+      #    password: ${{ github.token }}
 
       - name: Get image
         run: |
@@ -70,145 +70,149 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           #severity: 'CRITICAL,HIGH'
+          format: 'github'
+          output: 'dependency-results.sbom.json'
+          github-pat: ${{ github.token }} # or ${{ secrets.github_pat_name }} if you're using a PAT
+          severity: "MEDIUM,HIGH,CRITICAL"
 
-      - name: Check for vulnerabilities
-        id: check_vulns
-        run: |
-          # Check if there are any vulnerabilities
-          VULN_COUNT=$(jq -r '[.Results[] | select(.Vulnerabilities) | .Vulnerabilities | length] | add // 0' ${{ env.REPORT_DIR }}/vulnerabilities.json)
-          if [ "$VULN_COUNT" -eq 0 ]; then
-            echo "No vulnerabilities found, stopping workflow"
-            echo "FOUND_VULNS=false" >> $GITHUB_ENV
-          else
-            echo "Found $VULN_COUNT vulnerabilities"
-            echo "FOUND_VULNS=true" >> $GITHUB_ENV
-          fi
-
-      - name: Check for existing security report
-        if: env.FOUND_VULNS == 'true'
-        id: check_report
-        run: |
-          # Check if there's already a security report issue for this version
-          EXISTING_ISSUE=$(gh issue list \
-            --label "version:${{ env.IMAGE_TAG }}" \
-            --label "security" \
-            --json number \
-            --jq '.[0].number')
-
-          if [ -n "$EXISTING_ISSUE" ]; then
-            echo "EXISTING_REPORT=true" >> $GITHUB_ENV
-            echo "ISSUE_NUMBER=$EXISTING_ISSUE" >> $GITHUB_ENV
-          else
-            echo "EXISTING_REPORT=false" >> $GITHUB_ENV
-          fi
-
-      - name: Generate Security Report
-        if: env.FOUND_VULNS == 'true'
-        run: |
-          .github/scripts/sec-scan-report \
-            ${{ env.REPORT_DIR }}/vulnerabilities.json \
-            ${{ env.REPORT_DIR }}/deptree.json \
-            ${{ env.REPORT_DIR }}/vulnerabilities.md
-
-          # Output markdown summary to GitHub step summary
-          cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
-
-      - name: Ensure labels exist
-        if: env.FOUND_VULNS == 'true'
-        run: |
-          # Function to create label if it doesn't exist
-          create_label() {
-            local name=$1
-            local color=$2
-            local description=$3
-
-            # Check if label exists
-            if ! gh label list | grep -q "^$name"; then
-              echo "Creating label: $name"
-              gh label create "$name" --color "$color" --description "$description"
-            fi
-          }
-
-          # Create base labels
-          create_label "security" "d73a4a" "Security-related issues"
-          create_label "automated" "0366d6" "Automatically generated content"
-          create_label "version:${{ env.IMAGE_TAG }}" "0366d6" "Issues related to version ${{ env.IMAGE_TAG }}"
-
-          # Create severity labels if vulnerabilities exist
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "CRITICAL")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            create_label "severity:critical" "b60205" "Critical severity vulnerabilities"
-          fi
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "HIGH")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            create_label "severity:high" "d93f0b" "High severity vulnerabilities"
-          fi
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "MEDIUM")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            create_label "severity:medium" "fbca04" "Medium severity vulnerabilities"
-          fi
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "LOW")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            create_label "severity:low" "0e8a16" "Low severity vulnerabilities"
-          fi
-
-      - name: Create or Update Security Report Issue
-        if: env.FOUND_VULNS == 'true'
-        run: |
-          # Get current date
-          CURRENT_DATE=$(date '+%Y-%m-%d')
-
-          # Create issue title
-          TITLE="Security Scan Report for version ${{ env.IMAGE_TAG }} ($CURRENT_DATE)"
-
-          # Create issue body with full report
-          BODY="## Security Scan Report
-
-          **Version:** \`${{ env.IMAGE_TAG }}\`
-          **Scan Date:** \`$CURRENT_DATE\`
-          **Image:** \`${{ env.IMAGE }}\`
-
-          ### Summary
-          $(cat ${{ env.REPORT_DIR }}/vulnerabilities.md)
-
-          ## Action Required
-          - [ ] Review all vulnerabilities
-          - [ ] Prioritize fixes based on severity
-          - [ ] Plan updates for packages with available fixes
-          - [ ] Document any accepted risks
-
-          _This report was automatically generated by the security scan workflow._"
-
-          # Create labels based on vulnerabilities
-          LABELS="security,automated,version:${{ env.IMAGE_TAG }}"
-
-          # Add severity labels if vulnerabilities exist
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "CRITICAL")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            LABELS="$LABELS,severity:critical"
-          fi
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "HIGH")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            LABELS="$LABELS,severity:high"
-          fi
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "MEDIUM")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            LABELS="$LABELS,severity:medium"
-          fi
-          if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "LOW")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
-            LABELS="$LABELS,severity:low"
-          fi
-
-          if [ "$EXISTING_REPORT" = "true" ]; then
-            # Update existing issue
-            gh issue edit "$ISSUE_NUMBER" \
-              --title "$TITLE" \
-              --body "$BODY"
-
-            # Get current labels and remove them one by one
-            gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | while read -r label; do
-              gh issue edit "$ISSUE_NUMBER" --remove-label "$label"
-            done
-
-            # Add new labels
-            gh issue edit "$ISSUE_NUMBER" --add-label "$LABELS"
-          else
-            # Create new issue
-            gh issue create \
-              --title "$TITLE" \
-              --body "$BODY" \
-              --label "$LABELS"
-          fi
+      #- name: Check for vulnerabilities
+      #  id: check_vulns
+      #  run: |
+      #    # Check if there are any vulnerabilities
+      #    VULN_COUNT=$(jq -r '[.Results[] | select(.Vulnerabilities) | .Vulnerabilities | length] | add // 0' ${{ env.REPORT_DIR }}/vulnerabilities.json)
+      #    if [ "$VULN_COUNT" -eq 0 ]; then
+      #      echo "No vulnerabilities found, stopping workflow"
+      #      echo "FOUND_VULNS=false" >> $GITHUB_ENV
+      #    else
+      #      echo "Found $VULN_COUNT vulnerabilities"
+      #      echo "FOUND_VULNS=true" >> $GITHUB_ENV
+      #    fi
+#
+      #- name: Check for existing security report
+      #  if: env.FOUND_VULNS == 'true'
+      #  id: check_report
+      #  run: |
+      #    # Check if there's already a security report issue for this version
+      #    EXISTING_ISSUE=$(gh issue list \
+      #      --label "version:${{ env.IMAGE_TAG }}" \
+      #      --label "security" \
+      #      --json number \
+      #      --jq '.[0].number')
+#
+      #    if [ -n "$EXISTING_ISSUE" ]; then
+      #      echo "EXISTING_REPORT=true" >> $GITHUB_ENV
+      #      echo "ISSUE_NUMBER=$EXISTING_ISSUE" >> $GITHUB_ENV
+      #    else
+      #      echo "EXISTING_REPORT=false" >> $GITHUB_ENV
+      #    fi
+#
+      #- name: Generate Security Report
+      #  if: env.FOUND_VULNS == 'true'
+      #  run: |
+      #    .github/scripts/sec-scan-report \
+      #      ${{ env.REPORT_DIR }}/vulnerabilities.json \
+      #      ${{ env.REPORT_DIR }}/deptree.json \
+      #      ${{ env.REPORT_DIR }}/vulnerabilities.md
+#
+      #    # Output markdown summary to GitHub step summary
+      #    cat ${{ env.REPORT_DIR }}/vulnerabilities.md >> $GITHUB_STEP_SUMMARY
+#
+      #- name: Ensure labels exist
+      #  if: env.FOUND_VULNS == 'true'
+      #  run: |
+      #    # Function to create label if it doesn't exist
+      #    create_label() {
+      #      local name=$1
+      #      local color=$2
+      #      local description=$3
+#
+      #      # Check if label exists
+      #      if ! gh label list | grep -q "^$name"; then
+      #        echo "Creating label: $name"
+      #        gh label create "$name" --color "$color" --description "$description"
+      #      fi
+      #    }
+#
+      #    # Create base labels
+      #    create_label "security" "d73a4a" "Security-related issues"
+      #    create_label "automated" "0366d6" "Automatically generated content"
+      #    create_label "version:${{ env.IMAGE_TAG }}" "0366d6" "Issues related to version ${{ env.IMAGE_TAG }}"
+#
+      #    # Create severity labels if vulnerabilities exist
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "CRITICAL")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      create_label "severity:critical" "b60205" "Critical severity vulnerabilities"
+      #    fi
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "HIGH")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      create_label "severity:high" "d93f0b" "High severity vulnerabilities"
+      #    fi
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "MEDIUM")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      create_label "severity:medium" "fbca04" "Medium severity vulnerabilities"
+      #    fi
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "LOW")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      create_label "severity:low" "0e8a16" "Low severity vulnerabilities"
+      #    fi
+#
+      #- name: Create or Update Security Report Issue
+      #  if: env.FOUND_VULNS == 'true'
+      #  run: |
+      #    # Get current date
+      #    CURRENT_DATE=$(date '+%Y-%m-%d')
+#
+      #    # Create issue title
+      #    TITLE="Security Scan Report for version ${{ env.IMAGE_TAG }} ($CURRENT_DATE)"
+#
+      #    # Create issue body with full report
+      #    BODY="## Security Scan Report
+#
+      #    **Version:** \`${{ env.IMAGE_TAG }}\`
+      #    **Scan Date:** \`$CURRENT_DATE\`
+      #    **Image:** \`${{ env.IMAGE }}\`
+#
+      #    ### Summary
+      #    $(cat ${{ env.REPORT_DIR }}/vulnerabilities.md)
+#
+      #    ## Action Required
+      #    - [ ] Review all vulnerabilities
+      #    - [ ] Prioritize fixes based on severity
+      #    - [ ] Plan updates for packages with available fixes
+      #    - [ ] Document any accepted risks
+#
+      #    _This report was automatically generated by the security scan workflow._"
+#
+      #    # Create labels based on vulnerabilities
+      #    LABELS="security,automated,version:${{ env.IMAGE_TAG }}"
+#
+      #    # Add severity labels if vulnerabilities exist
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "CRITICAL")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      LABELS="$LABELS,severity:critical"
+      #    fi
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "HIGH")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      LABELS="$LABELS,severity:high"
+      #    fi
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "MEDIUM")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      LABELS="$LABELS,severity:medium"
+      #    fi
+      #    if jq -e '.Results[] | select(.Vulnerabilities) | .Vulnerabilities[] | select(.Severity == "LOW")' ${{ env.REPORT_DIR }}/vulnerabilities.json > /dev/null; then
+      #      LABELS="$LABELS,severity:low"
+      #    fi
+#
+      #    if [ "$EXISTING_REPORT" = "true" ]; then
+      #      # Update existing issue
+      #      gh issue edit "$ISSUE_NUMBER" \
+      #        --title "$TITLE" \
+      #        --body "$BODY"
+#
+      #      # Get current labels and remove them one by one
+      #      gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name' | while read -r label; do
+      #        gh issue edit "$ISSUE_NUMBER" --remove-label "$label"
+      #      done
+#
+      #      # Add new labels
+      #      gh issue edit "$ISSUE_NUMBER" --add-label "$LABELS"
+      #    else
+      #      # Create new issue
+      #      gh issue create \
+      #        --title "$TITLE" \
+      #        --body "$BODY" \
+      #        --label "$LABELS"
+      #    fi
