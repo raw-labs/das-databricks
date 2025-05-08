@@ -7,14 +7,11 @@ updates:
     target-branch: "main"
     labels:
       - "dependencies"
-      - "security"
     commit-message:
       prefix: "chore"
       include: "scope"
-    assignees:
-      - "@raw-labs/devops"
     reviewers:
-      - "@raw-labs/devops"
+      - "raw-labs/devops"
     ignore:
       - dependency-name: "raw-labs/das-sec-scan"
         update-types: ["version-update:semver-patch"]
