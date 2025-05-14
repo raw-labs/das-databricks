@@ -57,25 +57,3 @@ jobs:
         draft: false
         prerelease: ${{ contains(github.ref_name, '-') }}
         tag_name: ${{ github.ref_name }}
-  trigger-deploy:
-      needs: publish-docker-image
-      if: needs.publish-docker-image.outputs.should_trigger_deploy == 'true'
-      runs-on: ubuntu-latest
-      steps:
-        - name: tag without 'v' prefix
-          id: extract_tag
-          run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        - name: trigger mvp-deployer workflow
-          uses: peter-evans/repository-dispatch@v3
-          with:
-            token: ${{ secrets.RAW_CI_PAT }}
-            repository: raw-labs/mvp-deployer
-            event-type: das-databricks-integration-cd
-            client-payload: |-
-              {
-                "aws_region": "eu-west-1",
-                "raw_version": "${{ steps.extract_tag.outputs.version }}",
-                "target_env": "integration",
-                "loaded_vars": "integration",
-                "deployer_version": "latest"
-              }
