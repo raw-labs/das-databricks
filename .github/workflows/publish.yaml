@@ -16,7 +16,7 @@ jobs:
       image: sbtscala/scala-sbt:eclipse-temurin-jammy-21.0.2_13_1.9.9_2.12.19
       options: --user 1001:1001
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         fetch-depth: 0
     - name: sbt publish
@@ -26,7 +26,7 @@ jobs:
     outputs:
       should_trigger_deploy: ${{ steps.should_trigger_deploy.outputs.should_trigger_deploy }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         fetch-depth: 0
     - uses: docker/login-action@v3
@@ -47,7 +47,7 @@ jobs:
     needs: [publish-jars, publish-docker-image]
     runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         fetch-depth: 0
     - uses: softprops/action-gh-release@v2
